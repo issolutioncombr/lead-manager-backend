@@ -1,0 +1,469 @@
+import { HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+
+import { PrismaService } from '../prisma/prisma.service';
+import { EvolutionService } from './evolution.service';
+
+interface EvolutionQrPayload {
+  svg: string;
+  base64: string;
+  status: string;
+}
+
+export interface EvolutionSessionResponse {
+  instanceId: string;
+  status: 'connected' | 'pending' | 'disconnected';
+  qrCode?: EvolutionQrPayload | null;
+  number?: string | null;
+  name?: string | null;
+  providerStatus?: string;
+  message?: string | null;
+}
+
+type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
+type JsonObject = { [key: string]: JsonValue };
+
+type EvolutionInstanceRecord = {
+  id: string;
+  userId: string;
+  instanceId: string;
+  status: string;
+  connectedAt: Date | null;
+  metadata: JsonValue | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+@Injectable()
+export class EvolutionIntegrationService {
+  private readonly logger = new Logger(EvolutionIntegrationService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly evolutionService: EvolutionService
+  ) {}
+
+  async startSession(userId: string): Promise<EvolutionSessionResponse> {
+    const current = await this.findLatestInstance(userId);
+
+    if (current) {
+      const state = await this.safeGetState(current.instanceId);
+
+      if (state) {
+        const providerState = state.instance?.state ?? state.status ?? 'unknown';
+        const status = this.mapStateToStatus(providerState);
+
+        if (status === 'connected') {
+          await this.updateInstance(current, {
+            status: 'connected',
+            connectedAt: current.connectedAt ?? new Date(),
+            metadata: {
+              lastState: providerState,
+              lastStatusAt: new Date().toISOString()
+            } as JsonObject
+          });
+
+          return {
+            instanceId: current.instanceId,
+            status: 'connected',
+            number: this.extractPhoneFromMetadata(current.metadata),
+            name: this.extractNameFromMetadata(current.metadata),
+            providerStatus: providerState,
+            message: state.message ?? null
+          };
+        }
+
+        if (status === 'pending') {
+          const qr = await this.fetchQr(current);
+
+          return {
+            instanceId: current.instanceId,
+            status: 'pending',
+            qrCode: qr,
+            providerStatus: providerState,
+            message: state.message ?? null
+          };
+        }
+
+        await this.updateInstance(current, {
+          status: 'disconnected',
+          connectedAt: null,
+          metadata: {
+            lastState: providerState,
+            lastStatusAt: new Date().toISOString()
+          } as JsonObject
+        });
+      } else {
+        // Instance no longer exists on provider. Keep record disconnected to allow fresh creation.
+        await this.updateInstance(current, {
+          status: 'disconnected',
+          connectedAt: null,
+          metadata: {
+            lastState: 'unknown',
+            lastStatusAt: new Date().toISOString()
+          } as JsonObject
+        });
+      }
+    }
+
+    return this.createFreshSession(userId);
+  }
+
+  async refreshQr(userId: string, instanceId: string): Promise<EvolutionSessionResponse> {
+    const instance = await this.getOwnedInstance(userId, instanceId);
+    const qr = await this.fetchQr(instance);
+
+    return {
+      instanceId,
+      status: 'pending',
+      qrCode: qr
+    };
+  }
+
+  async getStatus(userId: string, instanceId: string): Promise<EvolutionSessionResponse> {
+    const instance = await this.getOwnedInstance(userId, instanceId);
+    const [state, summary] = await Promise.all([
+      this.evolutionService.getState(instanceId),
+      this.evolutionService.fetchInstance(instanceId).catch(() => null)
+    ]);
+
+    const providerState =
+      state.instance?.state ?? state.status ?? summary?.connectionStatus ?? 'unknown';
+    const status = this.mapStateToStatus(providerState);
+    const storedQr = this.readQrFromMetadata(instance.metadata);
+    const connectedAt =
+      status === 'connected'
+        ? instance.connectedAt ?? new Date()
+        : status === 'disconnected'
+          ? null
+          : instance.connectedAt ?? null;
+
+    let qrCode: EvolutionQrPayload | null = null;
+
+    if (status === 'pending') {
+      qrCode = storedQr ?? (await this.fetchQr(instance));
+    }
+
+    await this.updateInstance(instance, {
+      status,
+      connectedAt,
+      metadata: {
+        lastState: providerState,
+        connectionStatus: summary?.connectionStatus ?? null,
+        ownerJid: summary?.ownerJid ?? null,
+        profileName: summary?.profileName ?? null,
+        profilePicUrl: summary?.profilePicUrl ?? null,
+        lastStatusAt: new Date().toISOString()
+      } as JsonObject
+    });
+
+    return {
+      instanceId,
+      status,
+      number:
+        this.extractPhoneFromSummary(summary) ?? this.extractPhoneFromMetadata(instance.metadata),
+      name: summary?.profileName ?? this.extractNameFromMetadata(instance.metadata),
+      qrCode,
+      providerStatus: providerState,
+      message: state.message ?? null
+    };
+  }
+
+  async disconnect(userId: string, instanceId: string): Promise<EvolutionSessionResponse> {
+    const instance = await this.getOwnedInstance(userId, instanceId);
+
+    try {
+      await this.evolutionService.logout(instanceId);
+    } catch (error) {
+      if (!(error instanceof HttpException && error.getStatus() === 404)) {
+        throw error;
+      }
+
+      this.logger.warn(`Evolution instance ${instanceId} already missing on provider.`);
+    }
+
+    await this.updateInstance(instance, {
+      status: 'disconnected',
+      connectedAt: null,
+      metadata: {
+        lastState: 'disconnected',
+        lastStatusAt: new Date().toISOString()
+      } as JsonObject
+    });
+
+    return {
+      instanceId,
+      status: 'disconnected'
+    };
+  }
+
+  async getCurrentSession(userId: string): Promise<EvolutionSessionResponse | null> {
+    const current = await this.findLatestInstance(userId);
+
+    if (!current) {
+      return null;
+    }
+
+    const state = await this.safeGetState(current.instanceId);
+    const storedQr = this.readQrFromMetadata(current.metadata);
+
+    if (!state) {
+      await this.updateInstance(current, {
+        status: 'disconnected',
+        connectedAt: null,
+        metadata: {
+          lastState: 'unknown',
+          lastStatusAt: new Date().toISOString()
+        } as JsonObject
+      });
+
+      return {
+        instanceId: current.instanceId,
+        status: 'disconnected',
+        qrCode: storedQr
+      };
+    }
+
+    if (state.instance.state === 'connected') {
+      await this.updateInstance(current, {
+        status: 'connected',
+        connectedAt: current.connectedAt ?? new Date(),
+        metadata: {
+          lastState: 'connected',
+          number: state.instance.number ?? null,
+          name: state.instance.name ?? null,
+          lastStatusAt: new Date().toISOString()
+        } as JsonObject
+      });
+
+      return {
+        instanceId: current.instanceId,
+        status: 'connected',
+        number: state.instance.number ?? null,
+        name: state.instance.name ?? null,
+        providerStatus: state.status,
+        message: state.message ?? null
+      };
+    }
+
+    if (state.instance.state === 'connecting') {
+      const qrPayload = storedQr ?? (await this.fetchQr(current));
+
+      await this.updateInstance(current, {
+        status: 'pending',
+        metadata: {
+          lastState: 'connecting',
+          number: state.instance.number ?? null,
+          name: state.instance.name ?? null,
+          lastStatusAt: new Date().toISOString()
+        } as JsonObject
+      });
+
+      return {
+        instanceId: current.instanceId,
+        status: 'pending',
+        qrCode: qrPayload,
+        number: state.instance.number ?? null,
+        name: state.instance.name ?? null,
+        providerStatus: state.status,
+        message: state.message ?? null
+      };
+    }
+
+    await this.updateInstance(current, {
+      status: 'disconnected',
+      connectedAt: null,
+      metadata: {
+        lastState: state.instance.state,
+        lastStatusAt: new Date().toISOString()
+      } as JsonObject
+    });
+
+    return {
+      instanceId: current.instanceId,
+      status: 'disconnected',
+      qrCode: storedQr,
+      providerStatus: state.status,
+      message: state.message ?? null
+    };
+  }
+
+  private async findLatestInstance(userId: string) {
+    return this.evolutionModel().findFirst({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    });
+  }
+
+  private async createFreshSession(userId: string): Promise<EvolutionSessionResponse> {
+    const created = await this.evolutionService.createInstance(this.buildInstanceName(userId));
+    const qr = await this.evolutionService.getQrCode(created.id);
+
+    const metadata: JsonObject = {
+      displayName: created.name ?? null,
+      lastQrSvg: qr.qrCode,
+      lastQrBase64: qr.base64,
+      lastQrStatus: qr.status,
+      lastQrAt: new Date().toISOString(),
+      providerId: created.providerId ?? null,
+      token: created.token ?? null,
+      rawInstance: created.raw ? (created.raw as JsonObject) : null
+    };
+
+    await this.evolutionModel().create({
+      data: {
+        userId,
+        instanceId: created.id,
+        status: 'pending',
+        metadata
+      }
+    });
+
+    return {
+      instanceId: created.id,
+      status: 'pending',
+      qrCode: {
+        svg: qr.qrCode,
+        base64: qr.base64,
+        status: qr.status
+      }
+    };
+  }
+
+  private async fetchQr(instance: EvolutionInstanceRecord): Promise<EvolutionQrPayload> {
+    const qrPayload = await this.evolutionService.getQrCode(instance.instanceId);
+
+    await this.updateInstance(instance, {
+      status: 'pending',
+      metadata: {
+        lastQrSvg: qrPayload.qrCode,
+        lastQrBase64: qrPayload.base64,
+        lastQrStatus: qrPayload.status,
+        lastQrAt: new Date().toISOString()
+      } as JsonObject
+    });
+
+    return {
+      svg: qrPayload.qrCode,
+      base64: qrPayload.base64,
+      status: qrPayload.status
+    };
+  }
+
+  private async safeGetState(instanceId: string) {
+    try {
+      return await this.evolutionService.getState(instanceId);
+    } catch (error) {
+      if (error instanceof HttpException && error.getStatus() === 404) {
+        this.logger.warn(`Evolution instance ${instanceId} was not found on provider.`);
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
+  private async getOwnedInstance(
+    userId: string,
+    instanceId: string
+  ): Promise<EvolutionInstanceRecord> {
+    const instance = await this.evolutionModel().findUnique({
+      where: { instanceId }
+    });
+
+    if (!instance || instance.userId !== userId) {
+      throw new NotFoundException('Evolution instance not found.');
+    }
+
+    return instance as EvolutionInstanceRecord;
+  }
+
+  private async updateInstance(
+    instance: EvolutionInstanceRecord,
+    payload: {
+      status?: string;
+      connectedAt?: Date | null;
+      metadata?: JsonObject;
+    }
+  ) {
+    const { status, connectedAt, metadata } = payload;
+
+    await this.evolutionModel().update({
+      where: { id: instance.id },
+      data: {
+        ...(status ? { status } : {}),
+        ...(connectedAt !== undefined ? { connectedAt } : {}),
+        ...(metadata
+          ? { metadata: this.mergeMetadata(instance.metadata, metadata) }
+          : {})
+      }
+    });
+  }
+
+  private mergeMetadata(
+    current: JsonValue | null,
+    patch: JsonObject
+  ): JsonObject {
+    const base: JsonObject =
+      current && typeof current === 'object' && !Array.isArray(current)
+        ? { ...(current as JsonObject) }
+        : {};
+
+    return {
+      ...base,
+      ...patch
+    };
+  }
+
+  private readQrFromMetadata(metadata: JsonValue | null): EvolutionQrPayload | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+
+    const record = metadata as JsonObject;
+    const base64Raw = record['lastQrBase64'];
+    const svgRaw = record['lastQrSvg'];
+    const statusRaw = record['lastQrStatus'];
+
+    const base64Value =
+      typeof base64Raw === 'string' && base64Raw.length > 0 ? (base64Raw as string) : null;
+    const svgValue =
+      typeof svgRaw === 'string' && svgRaw.length > 0 ? (svgRaw as string) : null;
+    const statusValue =
+      typeof statusRaw === 'string' && statusRaw.length > 0 ? (statusRaw as string) : 'pending';
+
+    if (!base64Value && !svgValue) {
+      return null;
+    }
+
+    return {
+      base64: base64Value ?? '',
+      svg: svgValue ?? '',
+      status: statusValue
+    };
+  }
+
+  private evolutionModel() {
+    return (this.prisma as any).evolutionInstance as {
+      findFirst: (...args: any[]) => Promise<EvolutionInstanceRecord | null>;
+      create: (...args: any[]) => Promise<EvolutionInstanceRecord>;
+      findUnique: (...args: any[]) => Promise<EvolutionInstanceRecord | null>;
+      update: (...args: any[]) => Promise<EvolutionInstanceRecord>;
+    };
+  }
+
+  private mapStateToStatus(state: ProviderState): 'connected' | 'pending' | 'disconnected' {
+    switch (state) {
+      case 'connected':
+        return 'connected';
+      case 'connecting':
+        return 'pending';
+      default:
+        return 'disconnected';
+    }
+  }
+
+  private buildInstanceName(userId: string): string {
+    const suffix = userId.slice(-6);
+    return `clinic-${suffix}`;
+  }
+}
