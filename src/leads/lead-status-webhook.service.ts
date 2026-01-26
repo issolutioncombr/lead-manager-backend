@@ -51,14 +51,33 @@ export class LeadStatusWebhookService {
         orderBy: { start: 'desc' }
       }));
 
+    let email = params.lead.email;
+    let contact = params.lead.contact;
+
+    // Verifica se os campos estao trocados (email no contato e vice-versa)
+    // Se o campo 'email' nao tem @ e o campo 'contact' tem, destroca.
+    if (email && !email.includes('@') && contact && contact.includes('@')) {
+      const temp = email;
+      email = contact;
+      contact = temp;
+    }
+
     const payload = {
+      user_id: params.userId,
+      lead_id: params.lead.id,
       lead_nome: params.lead.name ?? null,
-      lead_email: params.lead.email ?? null,
-      lead_contato: params.lead.contact ?? null,
+      lead_email: email ?? null,
+      lead_contato: contact ?? null,
+      lead_source: params.lead.source ?? null,
+      lead_notes: params.lead.notes ?? null,
+      lead_score: params.lead.score ?? 0,
+      lead_stage: params.newStage,
       lead_status: this.formatLeadStageLabel(params.newStage),
       call_link: appointment?.meetLink ?? null,
       call_inicio: appointment ? this.formatDate(appointment.start) : null,
       call_fim: appointment ? this.formatDate(appointment.end) : null,
+      call_data: appointment ? dayjs(appointment.start).tz(this.timezone).format('DD/MM/YYYY') : null,
+      call_hora: appointment ? dayjs(appointment.start).tz(this.timezone).format('HH:mm') : null,
       call_status: appointment ? this.formatCallStatus(appointment.status) : null
     };
 
