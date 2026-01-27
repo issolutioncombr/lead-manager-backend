@@ -109,6 +109,17 @@ export class LeadStatusWebhookService {
     }
   }
 
+  private getMetaEventName(stage: LeadStage): string {
+    switch (stage) {
+      case 'NOVO': return 'Lead';
+      case 'AGENDOU_CALL': return 'Schedule';
+      case 'ENTROU_CALL': return 'QualifiedLead';
+      case 'COMPROU': return 'Purchase';
+      case 'NO_SHOW': return 'NoShow';
+      default: return 'Lead';
+    }
+  }
+
   private formatLeadStageLabel(stage: LeadStage): string {
     const labels: Record<LeadStage, string> = {
       NOVO: 'Novo',

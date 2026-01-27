@@ -422,10 +422,16 @@ model WhatsappMessage {
   // IDs e Metadados Básicos
   wamid     String   @unique
   remoteJid String
+  remoteJidAlt String?
   phoneRaw  String?  // Normalized phone number
   fromMe    Boolean
   pushName  String?
+  sender    String?
+  participant String?
+  addressingMode String?
   timestamp DateTime
+  senderTimestamp BigInt? // Usando BigInt para timestamp unix preciso ou Int se for segundos
+  recipientTimestamp BigInt?
   status    String?
 
   // Conteúdo

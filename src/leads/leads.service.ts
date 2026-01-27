@@ -315,4 +315,59 @@ export class LeadsService {
     const filename = `leads${tag}_${new Date().toISOString().slice(0, 10)}.csv`;
     return { filename, content };
   }
+
+  async getMetaCapiEvents(userId: string) {
+    // Cast para any para evitar erro de tipo temporário do Prisma
+    const events = await (this.prisma as any).whatsappMessage.findMany({
+      where: {
+        userId,
+        eventName: { not: null }, // Apenas eventos qualificados
+        ctwaClid: { not: null }   // Apenas eventos com atribuição
+      },
+      select: {
+        eventName: true,
+        timestamp: true,
+        ctwaClid: true,
+        adSourceId: true,
+        hashedEmail: true,
+        hashedPhone: true,
+        hashedFirstName: true,
+        hashedLastName: true,
+        externalId: true,
+        conversionSource: true,
+        contentName: true,
+        contentCategory: true,
+        leadStage: true,
+        messagingChannel: true,
+        originPlatform: true
+      },
+      orderBy: {
+        timestamp: 'desc'
+      }
+    });
+
+    return events.map((event: any) => ({
+      event_name: event.eventName,
+      event_time: Math.floor(new Date(event.timestamp).getTime() / 1000),
+      action_source: "chat",
+      user_data: {
+        em: event.hashedEmail ? [event.hashedEmail] : [],
+        ph: event.hashedPhone ? [event.hashedPhone] : [],
+        fn: event.hashedFirstName ? [event.hashedFirstName] : [],
+        ln: event.hashedLastName ? [event.hashedLastName] : [],
+        external_id: event.externalId ? [event.externalId] : []
+      },
+      custom_data: {
+        currency: "BRL",
+        value: 0, // Ajustar conforme a lógica de valor
+        content_name: event.contentName || "Lead WhatsApp",
+        content_category: event.contentCategory || "CRM",
+        lead_stage: event.leadStage,
+        messaging_channel: event.messagingChannel,
+        origin_platform: event.originPlatform,
+        ad_id: event.adSourceId,
+        fb_login_id: event.ctwaClid
+      }
+    }));
+  }
 }

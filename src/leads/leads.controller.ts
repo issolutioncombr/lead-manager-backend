@@ -22,6 +22,11 @@ export class LeadsController {
     return this.leadsService.list(user.userId, query);
   }
 
+  @Get('export/events/meta-capi')
+  async exportMetaCapi(@CurrentUser() user: AuthenticatedUser) {
+    return this.leadsService.getMetaCapiEvents(user.userId);
+  }
+
   @Get('export')
   async export(@CurrentUser() user: AuthenticatedUser, @Query() query: LeadsQueryDto, @Res() res: Response) {
     const { filename, content } = await this.leadsService.exportCsv(user.userId, query);
