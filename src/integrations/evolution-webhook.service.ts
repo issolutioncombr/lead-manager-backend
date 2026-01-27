@@ -84,8 +84,8 @@ export class EvolutionWebhookService {
     const hashedPhone = this.hashData(phoneRaw);
     
     // Tenta extrair primeiro e último nome do pushName (heurística simples)
-    let hashedFirstName = null;
-    let hashedLastName = null;
+    let hashedFirstName: string | null = null;
+    let hashedLastName: string | null = null;
     if (pushName) {
       const parts = pushName.trim().split(/\s+/);
       if (parts.length > 0) {
@@ -98,13 +98,15 @@ export class EvolutionWebhookService {
 
     // 6. Salvar no Banco (Create only - Append Log)
     try {
-      await this.prisma.whatsappMessage.create({
+      // Cast para any para evitar erro de tipo temporário do Prisma
+      await (this.prisma as any).whatsappMessage.create({
         data: {
           userId,
           wamid,
           remoteJid,
           phoneRaw,
           pushName,
+          fromMe,
           timestamp: new Date(messageTimestamp * 1000), // Timestamp vem em segundos
           status: data.status,
           messageType: messageType || Object.keys(message || {})[0],
