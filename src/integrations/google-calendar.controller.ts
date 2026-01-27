@@ -88,7 +88,7 @@ export class GoogleCalendarController {
         description: dto.description,
         attendees: dto.attendees,
         location: dto.location,
-        conferenceData
+        conferenceData: conferenceData ? conferenceData : null
       }
     });
   }
