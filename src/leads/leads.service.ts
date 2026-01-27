@@ -101,6 +101,7 @@ export class LeadsService {
         adBody: dto.adBody,
         adMediaType: dto.adMediaType,
         adThumbnailUrl: dto.adThumbnailUrl,
+        adOriginalImageUrl: dto.adOriginalImageUrl,
         adSourceType: dto.adSourceType,
         adSourceId: dto.adSourceId,
         adSourceUrl: dto.adSourceUrl,

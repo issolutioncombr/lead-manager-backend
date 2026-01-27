@@ -457,6 +457,7 @@ model WhatsappMessage {
   adBody          String?
   adMediaType     Int?
   adThumbnailUrl  String? @db.Text
+  adOriginalImageUrl String? @db.Text
   adSourceType    String?
   adSourceId      String?
   adSourceUrl     String? @db.Text

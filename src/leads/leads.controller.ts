@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -36,7 +36,14 @@ export class LeadsController {
   }
 
   @Post()
-  create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateLeadDto) {
+  async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateLeadDto | CreateLeadDto[]) {
+    if (Array.isArray(dto)) {
+      // Se for um array, processa o primeiro item (ou itera, dependendo da regra de negócio)
+      // O N8N pode enviar um array se o nó anterior retornar múltiplos itens e "Split In Batches" não for usado
+      // Assumindo criação individual por enquanto, pegamos o primeiro.
+      // Se quiser suportar bulk insert real, precisaria de um serviço específico.
+      return this.leadsService.create(user.userId, dto[0]);
+    }
     return this.leadsService.create(user.userId, dto);
   }
 

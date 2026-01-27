@@ -118,6 +118,7 @@ export class EvolutionWebhookService {
           adBody: externalAdReply.body,
           adMediaType: externalAdReply.mediaType,
           adThumbnailUrl: externalAdReply.thumbnailUrl,
+          adOriginalImageUrl: externalAdReply.originalImageUrl,
           adSourceType: externalAdReply.sourceType,
           adSourceId: externalAdReply.sourceId,
           adSourceUrl: externalAdReply.sourceUrl,
