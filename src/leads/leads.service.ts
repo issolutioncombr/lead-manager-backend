@@ -38,6 +38,8 @@ export class LeadsService {
   }
 
   async create(userId: string, dto: CreateLeadDto): Promise<Lead> {
+    this.logger.log(`[CREATE LEAD] Payload recebido (User: ${userId}): ${JSON.stringify(dto, null, 2)}`);
+
     // Validação de Duplicidade por Telefone (se informado)
     if (dto.contact) {
       const existingLead = await this.prisma.lead.findFirst({
