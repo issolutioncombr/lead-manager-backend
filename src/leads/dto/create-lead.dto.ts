@@ -54,11 +54,27 @@ export class CreateLeadDto {
 
   @IsOptional()
   @IsString()
+  messageText?: string; // Mapeado de "messageText" ou "conversation"
+
+  @IsOptional()
+  @IsString()
   conversation?: string;
 
   @IsOptional()
   @IsNumber()
   messageTimestamp?: number;
+
+  @IsOptional()
+  @IsNumber()
+  senderTimestamp?: number;
+
+  @IsOptional()
+  @IsNumber()
+  recipientTimestamp?: number;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
 
   @IsOptional()
   @IsString()
@@ -71,6 +87,22 @@ export class CreateLeadDto {
   @IsOptional()
   @IsString()
   instanceId?: string;
+
+  @IsOptional()
+  @IsString()
+  sender?: string;
+
+  @IsOptional()
+  @IsString()
+  remoteJidAlt?: string;
+
+  @IsOptional()
+  @IsString()
+  addressingMode?: string;
+
+  @IsOptional()
+  @IsString()
+  participant?: string;
 
   // Atribuição
   @IsOptional()
@@ -144,6 +176,22 @@ export class CreateLeadDto {
   @IsOptional()
   @IsString()
   greetingMessageBody?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  containsAutoReply?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  renderLargerThumbnail?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  showAdAttribution?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  wtwaAdFormat?: boolean;
 
   // Raw JSON para segurança
   @IsOptional()

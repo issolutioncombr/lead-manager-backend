@@ -93,10 +93,19 @@ export class LeadsService {
         remoteJid: dto.remoteJid ?? rawPayload?.remoteJid ?? rawPayload?.key?.remoteJid,
         pushName: dto.pushName ?? rawPayload?.pushName ?? rawPayload?.name, // N8N manda 'name' às vezes
         messageTimestamp: dto.messageTimestamp ?? rawPayload?.messageTimestamp,
+        senderTimestamp: dto.senderTimestamp ?? rawPayload?.senderTimestamp,
+        recipientTimestamp: dto.recipientTimestamp ?? rawPayload?.recipientTimestamp,
+        status: dto.status ?? rawPayload?.status,
         fromMe: dto.fromMe ?? rawPayload?.fromMe,
         messageType: dto.messageType ?? rawPayload?.messageType,
-        conversation: dto.conversation ?? rawPayload?.conversation ?? rawPayload?.message?.conversation,
+        conversation: dto.conversation ?? dto.messageText ?? rawPayload?.conversation ?? rawPayload?.messageText ?? rawPayload?.message?.conversation,
         intent: dto.intent ?? rawPayload?.intent,
+        
+        // Metadata extra
+        sender: dto.sender ?? rawPayload?.sender,
+        remoteJidAlt: dto.remoteJidAlt ?? rawPayload?.remoteJidAlt ?? rawPayload?.key?.remoteJidAlt,
+        addressingMode: dto.addressingMode ?? rawPayload?.addressingMode ?? rawPayload?.key?.addressingMode,
+        participant: dto.participant ?? rawPayload?.participant ?? rawPayload?.key?.participant,
         
         // Atribuição
         conversionSource: dto.conversionSource ?? rawPayload?.conversionSource ?? rawPayload?.contextInfo?.conversionSource,
@@ -108,6 +117,14 @@ export class LeadsService {
         adOriginalImageUrl: dto.adOriginalImageUrl ?? rawPayload?.adOriginalImageUrl ?? rawPayload?.contextInfo?.externalAdReply?.originalImageUrl,
         adSourceType: dto.adSourceType ?? rawPayload?.adSourceType ?? rawPayload?.contextInfo?.externalAdReply?.sourceType,
         adSourceUrl: dto.adSourceUrl ?? rawPayload?.adSourceUrl ?? rawPayload?.contextInfo?.externalAdReply?.sourceUrl,
+        
+        // Flags de anúncio
+        containsAutoReply: dto.containsAutoReply ?? rawPayload?.containsAutoReply ?? rawPayload?.contextInfo?.externalAdReply?.containsAutoReply,
+        renderLargerThumbnail: dto.renderLargerThumbnail ?? rawPayload?.renderLargerThumbnail ?? rawPayload?.contextInfo?.externalAdReply?.renderLargerThumbnail,
+        showAdAttribution: dto.showAdAttribution ?? rawPayload?.showAdAttribution ?? rawPayload?.contextInfo?.externalAdReply?.showAdAttribution,
+        wtwaAdFormat: dto.wtwaAdFormat ?? rawPayload?.wtwaAdFormat ?? rawPayload?.contextInfo?.externalAdReply?.wtwaAdFormat,
+        automatedGreetingMessageShown: dto.automatedGreetingMessageShown ?? rawPayload?.automatedGreetingMessageShown ?? rawPayload?.contextInfo?.externalAdReply?.automatedGreetingMessageShown,
+        greetingMessageBody: dto.greetingMessageBody ?? rawPayload?.greetingMessageBody ?? rawPayload?.contextInfo?.externalAdReply?.greetingMessageBody,
         
         entryPointConversionSource: dto.entryPointConversionSource ?? rawPayload?.entryPointConversionSource,
         entryPointConversionApp: dto.entryPointConversionApp ?? rawPayload?.entryPointConversionApp,

@@ -470,6 +470,14 @@ model WhatsappMessage {
   entryPointConversionSource String?
   entryPointConversionApp    String?
 
+  // Flags e Metadata Adicionais
+  containsAutoReply           Boolean? @default(false)
+  renderLargerThumbnail       Boolean? @default(false)
+  showAdAttribution           Boolean? @default(false)
+  wtwaAdFormat                Boolean? @default(false)
+  automatedGreetingMessageShown Boolean? @default(false)
+  greetingMessageBody         String?  @db.Text
+
   // Payload Completo (Segurança)
   rawJson   Json?
 
