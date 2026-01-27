@@ -149,4 +149,8 @@ export class CreateLeadDto {
   @IsOptional()
   @IsObject()
   rawJson?: any;
+
+  // Suporte para payload N8N (lowercase)
+  @IsOptional()
+  rawjson?: any;
 }

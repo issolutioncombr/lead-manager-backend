@@ -57,10 +57,47 @@ export class LeadsService {
 
     const createdLead = await this.leadsRepository.create(userId, data);
 
+    // Lógica robusta para extrair dados do payload (suporta N8N aninhado em rawjson)
+    const rawPayload = dto.rawJson || dto.rawjson; 
+    
+    // Identifica o wamid (ID da mensagem)
+    const wamid = dto.wamid ?? rawPayload?.wamid ?? rawPayload?.key?.id;
+
     // Se vierem dados de atribuição do WhatsApp (via N8N/Evolution)
     // Atualizamos ou CRIAMOS a tabela WhatsappMessage com os dados enriquecidos
-    if (dto.wamid) {
-      this.enrichWhatsappMessage(userId, dto, createdLead).catch((err) => {
+    if (wamid) {
+      // Cria um DTO mesclado com prioridade: DTO > rawPayload > campos profundos do rawPayload
+      const mergedDto: CreateLeadDto = {
+        ...dto,
+        wamid,
+        // Garante que o rawJson esteja disponível para o enrich
+        rawJson: rawPayload?.rawJson ?? rawPayload, // Se o rawPayload tiver um rawJson dentro (estrutura N8N), usa ele. Senão usa o próprio.
+        
+        // Mapeamento de campos achatados
+        remoteJid: dto.remoteJid ?? rawPayload?.remoteJid ?? rawPayload?.key?.remoteJid,
+        pushName: dto.pushName ?? rawPayload?.pushName ?? rawPayload?.name, // N8N manda 'name' às vezes
+        messageTimestamp: dto.messageTimestamp ?? rawPayload?.messageTimestamp,
+        fromMe: dto.fromMe ?? rawPayload?.fromMe,
+        messageType: dto.messageType ?? rawPayload?.messageType,
+        conversation: dto.conversation ?? rawPayload?.conversation ?? rawPayload?.message?.conversation,
+        intent: dto.intent ?? rawPayload?.intent,
+        
+        // Atribuição
+        conversionSource: dto.conversionSource ?? rawPayload?.conversionSource ?? rawPayload?.contextInfo?.conversionSource,
+        adSourceId: dto.adSourceId ?? rawPayload?.adSourceId ?? rawPayload?.contextInfo?.externalAdReply?.sourceId,
+        ctwaClid: dto.ctwaClid ?? rawPayload?.ctwaClid ?? rawPayload?.contextInfo?.externalAdReply?.ctwaClid,
+        adTitle: dto.adTitle ?? rawPayload?.adTitle ?? rawPayload?.contextInfo?.externalAdReply?.title,
+        adBody: dto.adBody ?? rawPayload?.adBody ?? rawPayload?.contextInfo?.externalAdReply?.body,
+        adThumbnailUrl: dto.adThumbnailUrl ?? rawPayload?.adThumbnailUrl ?? rawPayload?.contextInfo?.externalAdReply?.thumbnailUrl,
+        adOriginalImageUrl: dto.adOriginalImageUrl ?? rawPayload?.adOriginalImageUrl ?? rawPayload?.contextInfo?.externalAdReply?.originalImageUrl,
+        adSourceType: dto.adSourceType ?? rawPayload?.adSourceType ?? rawPayload?.contextInfo?.externalAdReply?.sourceType,
+        adSourceUrl: dto.adSourceUrl ?? rawPayload?.adSourceUrl ?? rawPayload?.contextInfo?.externalAdReply?.sourceUrl,
+        
+        entryPointConversionSource: dto.entryPointConversionSource ?? rawPayload?.entryPointConversionSource,
+        entryPointConversionApp: dto.entryPointConversionApp ?? rawPayload?.entryPointConversionApp,
+      };
+
+      this.enrichWhatsappMessage(userId, mergedDto, createdLead).catch((err) => {
         this.logger.error(`Erro ao enriquecer WhatsappMessage para o lead ${createdLead.id}`, err);
       });
     }
