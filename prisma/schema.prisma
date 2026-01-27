@@ -66,6 +66,7 @@ model User {
   sellers             Seller[]
   agentPrompt         AgentPrompt?
   webhookTokens       WebhookToken[]
+  whatsappMessages    WhatsappMessage[]
 }
 
 model Client {
@@ -412,4 +413,73 @@ enum WeekDay {
   THURSDAY
   FRIDAY
   SATURDAY
+}
+
+model WhatsappMessage {
+  id        String   @id @default(cuid())
+  userId    String
+  
+  // IDs e Metadados Básicos
+  wamid     String   @unique
+  remoteJid String
+  phoneRaw  String?  // Normalized phone number
+  fromMe    Boolean
+  pushName  String?
+  timestamp DateTime
+  status    String?
+
+  // Conteúdo
+  messageType  String?
+  conversation String? @db.Text
+  intent       String? // alopecia | queda | preco | agenda | curiosidade
+  
+  // Enriquecimento de Dados (CRM) - Para envio ao Meta CAPI
+  eventName       String? // Lead, Schedule, QualifiedLead, Purchase, NoShow
+  hashedEmail     String? // SHA256 do email (em)
+  hashedPhone     String? // SHA256 do phoneRaw (ph)
+  hashedFirstName String? // SHA256 do primeiro nome (fn)
+  hashedLastName  String? // SHA256 do sobrenome (ln)
+  externalId      String? // ID externo do usuário (external_id)
+  
+  // Custom Data (Meta CAPI)
+  contentName      String? // Ex: "Call Avaliação"
+  contentCategory  String? // Ex: "High Ticket Service"
+  leadStage        String? // Ex: "Agendou uma call"
+  messagingChannel String? @default("WhatsApp")
+  originPlatform   String? @default("WhatsApp")
+  hasCall          Boolean @default(false)
+  attendedCall     Boolean @default(false)
+  converted        Boolean @default(false)
+
+  // Atribuição de Anúncios (Click-to-WhatsApp)
+  isAd            Boolean  @default(false)
+  adTitle         String?
+  adBody          String?
+  adMediaType     Int?
+  adThumbnailUrl  String? @db.Text
+  adSourceType    String?
+  adSourceId      String?
+  adSourceUrl     String? @db.Text
+  ctwaClid        String? @db.Text // Click ID (Crítico)
+  ref             String?
+  sourceApp       String?
+
+  // Conversão
+  conversionSource           String?
+  entryPointConversionSource String?
+  entryPointConversionApp    String?
+
+  // Payload Completo (Segurança)
+  rawJson   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([remoteJid])
+  @@index([timestamp])
+  @@index([ctwaClid])
+  @@map("whatsapp_messages")
 }

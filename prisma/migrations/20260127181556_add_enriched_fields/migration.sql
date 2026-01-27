@@ -1,0 +1,15 @@
+-- AlterTable
+ALTER TABLE "whatsapp_messages" ADD COLUMN     "attendedCall" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "contentCategory" TEXT,
+ADD COLUMN     "contentName" TEXT,
+ADD COLUMN     "converted" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "eventName" TEXT,
+ADD COLUMN     "externalId" TEXT,
+ADD COLUMN     "hasCall" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "hashedEmail" TEXT,
+ADD COLUMN     "hashedFirstName" TEXT,
+ADD COLUMN     "hashedLastName" TEXT,
+ADD COLUMN     "hashedPhone" TEXT,
+ADD COLUMN     "leadStage" TEXT,
+ADD COLUMN     "messagingChannel" TEXT DEFAULT 'WhatsApp',
+ADD COLUMN     "originPlatform" TEXT DEFAULT 'WhatsApp';
