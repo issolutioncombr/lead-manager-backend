@@ -54,6 +54,12 @@ export class LeadStatusWebhookService {
     let email = params.lead.email;
     let contact = params.lead.contact;
 
+    // Busca dados do usuario para pegar a API Key
+    const user = await this.prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { apiKey: true }
+    });
+
     // Verifica se os campos estao trocados (email no contato e vice-versa)
     // Se o campo 'email' nao tem @ e o campo 'contact' tem, destroca.
     if (email && !email.includes('@') && contact && contact.includes('@')) {
@@ -64,6 +70,7 @@ export class LeadStatusWebhookService {
 
     const payload = {
       user_id: params.userId,
+      user_api_key: user?.apiKey ?? null,
       lead_id: params.lead.id,
       lead_nome: params.lead.name ?? null,
       lead_email: email ?? null,
