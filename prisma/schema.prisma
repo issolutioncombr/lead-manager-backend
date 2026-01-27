@@ -470,11 +470,18 @@ model WhatsappMessage {
   ctwaClid        String? @db.Text // Click ID (Crítico)
   ref             String?
   sourceApp       String?
+  deviceSource    String?
+  instance        String?
+  instanceId      String?
 
   // Conversão
   conversionSource           String?
   entryPointConversionSource String?
   entryPointConversionApp    String?
+  entryPointConversionExternalSource String?
+  entryPointConversionExternalMedium String?
+  ctwaSignals                String?
+  adRef                      String?
 
   // Flags e Metadata Adicionais
   containsAutoReply           Boolean? @default(false)
