@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
 import { Appointment, Lead, LeadStage, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -38,6 +38,20 @@ export class LeadsService {
   }
 
   async create(userId: string, dto: CreateLeadDto): Promise<Lead> {
+    // Validação de Duplicidade por Telefone (se informado)
+    if (dto.contact) {
+      const existingLead = await this.prisma.lead.findFirst({
+        where: {
+          userId,
+          contact: dto.contact
+        }
+      });
+      
+      if (existingLead) {
+        throw new ConflictException(`Lead já existe com o telefone: ${dto.contact}`);
+      }
+    }
+
     const stage = dto.stage ?? LeadStage.NOVO;
 
     const score = calculateLeadScore({
@@ -223,6 +237,15 @@ export class LeadsService {
 
   async delete(userId: string, id: string): Promise<Lead> {
     await this.findById(userId, id);
+    
+    // Cast para any para evitar erro de tipo temporário do Prisma
+    await (this.prisma as any).whatsappMessage.deleteMany({
+      where: {
+        externalId: id,
+        userId: userId // Garante que só deleta mensagens do próprio usuário
+      }
+    });
+
     return this.leadsRepository.delete(id);
   }
 
