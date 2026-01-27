@@ -143,6 +143,10 @@ export class CreateLeadDto {
 
   @IsOptional()
   @IsString()
+  adRef?: string;
+
+  @IsOptional()
+  @IsString()
   ctwaClid?: string;
 
   @IsOptional()

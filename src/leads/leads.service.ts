@@ -181,11 +181,18 @@ export class LeadsService {
         adSourceId: dto.adSourceId,
         adSourceUrl: dto.adSourceUrl,
         ctwaClid: dto.ctwaClid,
+        adRef: dto.adRef,
         sourceApp: dto.sourceApp,
+        deviceSource: dto.deviceSource,
+        instance: dto.instance,
+        instanceId: dto.instanceId,
         
         conversionSource: dto.conversionSource,
         entryPointConversionSource: dto.entryPointConversionSource,
         entryPointConversionApp: dto.entryPointConversionApp,
+        entryPointConversionExternalSource: dto.entryPointConversionExternalSource,
+        entryPointConversionExternalMedium: dto.entryPointConversionExternalMedium,
+        ctwaSignals: dto.ctwaSignals,
 
         // Enriquecimento (Meta CAPI)
         hashedEmail,
