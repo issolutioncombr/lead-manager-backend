@@ -63,6 +63,8 @@ export class LeadsService {
     // Identifica o wamid (ID da mensagem)
     const wamid = dto.wamid ?? rawPayload?.wamid ?? rawPayload?.key?.id;
 
+    this.logger.log(`Payload recebido. Wamid detectado: ${wamid}. Tem rawPayload? ${!!rawPayload}`);
+
     // Se vierem dados de atribuição do WhatsApp (via N8N/Evolution)
     // Atualizamos ou CRIAMOS a tabela WhatsappMessage com os dados enriquecidos
     if (wamid) {
@@ -97,9 +99,14 @@ export class LeadsService {
         entryPointConversionApp: dto.entryPointConversionApp ?? rawPayload?.entryPointConversionApp,
       };
 
-      this.enrichWhatsappMessage(userId, mergedDto, createdLead).catch((err) => {
+      this.logger.log(`Enriquecendo WhatsappMessage para lead ${createdLead.id} com wamid ${wamid}`);
+      this.enrichWhatsappMessage(userId, mergedDto, createdLead).then(() => {
+        this.logger.log(`WhatsappMessage enriquecida com sucesso: ${wamid}`);
+      }).catch((err) => {
         this.logger.error(`Erro ao enriquecer WhatsappMessage para o lead ${createdLead.id}`, err);
       });
+    } else {
+      this.logger.warn(`Wamid não encontrado no payload para o lead ${createdLead.id}. Ignorando enriquecimento.`);
     }
 
     return createdLead;
