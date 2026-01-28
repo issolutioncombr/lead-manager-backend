@@ -28,10 +28,10 @@ type DashboardSourceFunnel = {
   totalLeads: number;
   stages: DashboardStageStats[];
   conversion: {
-    agendouFromNovo: number;
+    agendouFromTotal: number;
     entrouFromAgendou: number;
     comprouFromEntrou: number;
-    comprouFromNovo: number;
+    comprouFromTotal: number;
   };
 };
 
@@ -169,7 +169,7 @@ export class ReportsService {
       }
     };
 
-    const [totalLeads, leadsByStage, leadsBySourceStage] = await Promise.all([
+    const [totalLeads, leadsByStage, leadsBySourceStage, leadsForHourly] = await Promise.all([
       this.prisma.lead.count({ where: whereLead }),
       this.prisma.lead.groupBy({
         by: ['stage'],
@@ -180,6 +180,13 @@ export class ReportsService {
         by: ['source', 'stage'],
         where: whereLead,
         _count: { _all: true }
+      }),
+      this.prisma.lead.findMany({
+        where: whereLead,
+        select: {
+          createdAt: true,
+          source: true
+        }
       })
     ]);
 
@@ -231,6 +238,11 @@ export class ReportsService {
       const agendou = getCount(LeadStage.AGENDOU_CALL);
       const entrou = getCount(LeadStage.ENTROU_CALL);
       const comprou = getCount(LeadStage.COMPROU);
+      const noShow = getCount(LeadStage.NO_SHOW);
+
+      const reachedAgendou = agendou + entrou + comprou + noShow;
+      const reachedEntrou = entrou + comprou;
+      const reachedComprou = comprou;
 
       const percent = (count: number) => (total ? Number(((count / total) * 100).toFixed(2)) : 0);
       const rate = (num: number, den: number) => (den ? Number(((num / den) * 100).toFixed(2)) : 0);
@@ -244,10 +256,10 @@ export class ReportsService {
           percent: percent(getCount(stage))
         })),
         conversion: {
-          agendouFromNovo: rate(agendou, novo),
-          entrouFromAgendou: rate(entrou, agendou),
-          comprouFromEntrou: rate(comprou, entrou),
-          comprouFromNovo: rate(comprou, novo)
+          agendouFromTotal: rate(reachedAgendou, total),
+          entrouFromAgendou: rate(reachedEntrou, reachedAgendou),
+          comprouFromEntrou: rate(reachedComprou, reachedEntrou),
+          comprouFromTotal: rate(reachedComprou, total)
         }
       };
     };
@@ -260,12 +272,34 @@ export class ReportsService {
       }))
       .sort((a, b) => b.count - a.count);
 
+    const channelTotals = ['WhatsApp', 'Instagram'].map((source) => {
+      const count = normalizedSourceCounts[source] ?? 0;
+      return {
+        source,
+        count,
+        percent: totalLeads ? Number(((count / totalLeads) * 100).toFixed(2)) : 0
+      };
+    });
+
+    const hourlyCounts = leadsForHourly.reduce<Record<number, number>>((acc, lead) => {
+      const hour = Number(dayjs(lead.createdAt).tz('America/Sao_Paulo').format('H'));
+      acc[hour] = (acc[hour] ?? 0) + 1;
+      return acc;
+    }, {});
+
+    const hourlyLeads = Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      count: hourlyCounts[hour] ?? 0
+    }));
+
     return {
       date: range.date,
       totalLeads,
       top5Statuses,
       origins,
-      sourceFunnels: [buildFunnel('WhatsApp'), buildFunnel('Instagram')]
+      sourceFunnels: [buildFunnel('WhatsApp'), buildFunnel('Instagram')],
+      channelTotals,
+      hourlyLeads
     };
   }
 
@@ -277,18 +311,6 @@ export class ReportsService {
     const rangeEnd = dayjs.tz(range.date, 'YYYY-MM-DD', tz).add(1, 'day').startOf('day');
     const rangeStart = dayjs.tz(range.date, 'YYYY-MM-DD', tz).startOf('day').subtract(days - 1, 'day');
 
-    const rows = await this.prisma.$queryRaw<Array<{ day: string; stage: LeadStage; count: number }>>`
-      SELECT (("createdAt" AT TIME ZONE ${tz})::date)::text AS day,
-             "stage"::text AS stage,
-             COUNT(*)::int AS count
-      FROM "Lead"
-      WHERE "userId" = ${userId}
-        AND "createdAt" >= ${rangeStart.toDate()}
-        AND "createdAt" < ${rangeEnd.toDate()}
-      GROUP BY day, stage
-      ORDER BY day ASC;
-    `;
-
     const stageOrder: LeadStage[] = [
       LeadStage.NOVO,
       LeadStage.AGENDOU_CALL,
@@ -297,9 +319,24 @@ export class ReportsService {
       LeadStage.NO_SHOW
     ];
 
-    const byDay = rows.reduce<Record<string, Record<string, number>>>((acc, row) => {
-      acc[row.day] ??= {};
-      acc[row.day][row.stage] = (acc[row.day][row.stage] ?? 0) + row.count;
+    const leads = await this.prisma.lead.findMany({
+      where: {
+        userId,
+        createdAt: {
+          gte: rangeStart.toDate(),
+          lt: rangeEnd.toDate()
+        }
+      },
+      select: {
+        createdAt: true,
+        stage: true
+      }
+    });
+
+    const byDay = leads.reduce<Record<string, Record<string, number>>>((acc, lead) => {
+      const day = dayjs(lead.createdAt).tz(tz).format('YYYY-MM-DD');
+      acc[day] ??= {};
+      acc[day][lead.stage] = (acc[day][lead.stage] ?? 0) + 1;
       return acc;
     }, {});
 
