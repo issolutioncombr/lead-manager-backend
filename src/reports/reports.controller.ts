@@ -43,4 +43,13 @@ export class ReportsController {
   ) {
     return this.reportsService.dashboard(user.userId, date);
   }
+
+  @Get('dashboard/series')
+  dashboardSeries(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('endDate') endDate?: string,
+    @Query('days') days?: string
+  ) {
+    return this.reportsService.dashboardSeries(user.userId, endDate, days);
+  }
 }

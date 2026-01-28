@@ -17,11 +17,47 @@ interface DateRange {
   end?: string;
 }
 
+type DashboardStageStats = {
+  stage: LeadStage;
+  count: number;
+  percent: number;
+};
+
+type DashboardSourceFunnel = {
+  source: string;
+  totalLeads: number;
+  stages: DashboardStageStats[];
+  conversion: {
+    agendouFromNovo: number;
+    entrouFromAgendou: number;
+    comprouFromEntrou: number;
+    comprouFromNovo: number;
+  };
+};
+
 @Injectable()
 export class ReportsService {
   constructor(
     private readonly prisma: PrismaService
   ) {}
+
+  private normalizeSource(raw?: string | null) {
+    const value = (raw ?? '').trim();
+    if (!value) {
+      return 'Nao informado';
+    }
+
+    const lowered = value.toLowerCase();
+    if (lowered.includes('whats') || lowered.includes('wpp')) {
+      return 'WhatsApp';
+    }
+
+    if (lowered.includes('insta')) {
+      return 'Instagram';
+    }
+
+    return value;
+  }
 
   private resolveDayRange(date?: string) {
     const tz = 'America/Sao_Paulo';
@@ -133,7 +169,7 @@ export class ReportsService {
       }
     };
 
-    const [totalLeads, leadsByStage, leadsBySource] = await Promise.all([
+    const [totalLeads, leadsByStage, leadsBySourceStage] = await Promise.all([
       this.prisma.lead.count({ where: whereLead }),
       this.prisma.lead.groupBy({
         by: ['stage'],
@@ -141,7 +177,7 @@ export class ReportsService {
         _count: { _all: true }
       }),
       this.prisma.lead.groupBy({
-        by: ['source'],
+        by: ['source', 'stage'],
         where: whereLead,
         _count: { _all: true }
       })
@@ -170,12 +206,51 @@ export class ReportsService {
       };
     });
 
-    const normalizedSourceCounts = leadsBySource.reduce<Record<string, number>>((acc, item) => {
-      const raw = item.source ?? '';
-      const key = raw.trim() ? raw.trim() : 'Nao informado';
+    const normalizedSourceCounts = leadsBySourceStage.reduce<Record<string, number>>((acc, item) => {
+      const key = this.normalizeSource(item.source);
       acc[key] = (acc[key] ?? 0) + item._count._all;
       return acc;
     }, {});
+
+    const sourceStageCounts = leadsBySourceStage.reduce<Record<string, Record<string, number>>>(
+      (acc, item) => {
+        const source = this.normalizeSource(item.source);
+        acc[source] ??= {};
+        acc[source][item.stage] = (acc[source][item.stage] ?? 0) + item._count._all;
+        return acc;
+      },
+      {}
+    );
+
+    const buildFunnel = (source: string): DashboardSourceFunnel => {
+      const total = normalizedSourceCounts[source] ?? 0;
+      const stageCountsForSource = sourceStageCounts[source] ?? {};
+
+      const getCount = (stage: LeadStage) => stageCountsForSource[stage] ?? 0;
+      const novo = getCount(LeadStage.NOVO);
+      const agendou = getCount(LeadStage.AGENDOU_CALL);
+      const entrou = getCount(LeadStage.ENTROU_CALL);
+      const comprou = getCount(LeadStage.COMPROU);
+
+      const percent = (count: number) => (total ? Number(((count / total) * 100).toFixed(2)) : 0);
+      const rate = (num: number, den: number) => (den ? Number(((num / den) * 100).toFixed(2)) : 0);
+
+      return {
+        source,
+        totalLeads: total,
+        stages: stageOrder.map((stage) => ({
+          stage,
+          count: getCount(stage),
+          percent: percent(getCount(stage))
+        })),
+        conversion: {
+          agendouFromNovo: rate(agendou, novo),
+          entrouFromAgendou: rate(entrou, agendou),
+          comprouFromEntrou: rate(comprou, entrou),
+          comprouFromNovo: rate(comprou, novo)
+        }
+      };
+    };
 
     const origins = Object.entries(normalizedSourceCounts)
       .map(([origin, count]) => ({
@@ -189,7 +264,65 @@ export class ReportsService {
       date: range.date,
       totalLeads,
       top5Statuses,
-      origins
+      origins,
+      sourceFunnels: [buildFunnel('WhatsApp'), buildFunnel('Instagram')]
+    };
+  }
+
+  async dashboardSeries(userId: string, endDate?: string, daysInput?: string) {
+    const days = Math.max(1, Math.min(31, Number(daysInput ?? 7) || 7));
+    const tz = 'America/Sao_Paulo';
+    const range = this.resolveDayRange(endDate);
+
+    const rangeEnd = dayjs.tz(range.date, 'YYYY-MM-DD', tz).add(1, 'day').startOf('day');
+    const rangeStart = dayjs.tz(range.date, 'YYYY-MM-DD', tz).startOf('day').subtract(days - 1, 'day');
+
+    const rows = await this.prisma.$queryRaw<Array<{ day: string; stage: LeadStage; count: number }>>`
+      SELECT (("createdAt" AT TIME ZONE ${tz})::date)::text AS day,
+             "stage"::text AS stage,
+             COUNT(*)::int AS count
+      FROM "Lead"
+      WHERE "userId" = ${userId}
+        AND "createdAt" >= ${rangeStart.toDate()}
+        AND "createdAt" < ${rangeEnd.toDate()}
+      GROUP BY day, stage
+      ORDER BY day ASC;
+    `;
+
+    const stageOrder: LeadStage[] = [
+      LeadStage.NOVO,
+      LeadStage.AGENDOU_CALL,
+      LeadStage.ENTROU_CALL,
+      LeadStage.COMPROU,
+      LeadStage.NO_SHOW
+    ];
+
+    const byDay = rows.reduce<Record<string, Record<string, number>>>((acc, row) => {
+      acc[row.day] ??= {};
+      acc[row.day][row.stage] = (acc[row.day][row.stage] ?? 0) + row.count;
+      return acc;
+    }, {});
+
+    const series = Array.from({ length: days }, (_, idx) => {
+      const day = rangeStart.add(idx, 'day').format('YYYY-MM-DD');
+      const stageCounts = byDay[day] ?? {};
+      const statuses = stageOrder.map((stage) => ({
+        status: stage,
+        count: stageCounts[stage] ?? 0
+      }));
+      const totalLeads = statuses.reduce((sum, item) => sum + item.count, 0);
+      return {
+        date: day,
+        totalLeads,
+        statuses
+      };
+    });
+
+    return {
+      startDate: rangeStart.format('YYYY-MM-DD'),
+      endDate: range.date,
+      days,
+      series
     };
   }
 }
