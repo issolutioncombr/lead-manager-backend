@@ -35,4 +35,4 @@ COPY prisma ./prisma
 RUN chown -R node:node /app
 USER node
 EXPOSE 3001
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+CMD ["sh", "-c", "npx prisma generate && npx prisma migrate deploy && node dist/main.js"]
