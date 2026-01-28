@@ -38,7 +38,9 @@ export class LeadsService {
   }
 
   async create(userId: string, dto: CreateLeadDto): Promise<Lead> {
-    this.logger.log(`[CREATE LEAD] Payload recebido (User: ${userId}): ${JSON.stringify(dto, null, 2)}`);
+    this.logger.log(
+      `[CREATE LEAD] Payload recebido (User: ${userId}): ${JSON.stringify(this.redactSecrets(dto), null, 2)}`
+    );
 
     // Validação de Duplicidade por Telefone (se informado)
     if (dto.contact) {
@@ -74,7 +76,7 @@ export class LeadsService {
     const createdLead = await this.leadsRepository.create(userId, data);
 
     // Lógica robusta para extrair dados do payload (suporta N8N aninhado em rawjson)
-    const rawPayload = dto.rawJson || dto.rawjson; 
+    const rawPayload = dto.rawJson || dto.rawjson;
     
     // Identifica o wamid (ID da mensagem)
     const wamid = dto.wamid ?? rawPayload?.wamid ?? rawPayload?.key?.id;
@@ -108,17 +110,30 @@ export class LeadsService {
         remoteJidAlt: dto.remoteJidAlt ?? rawPayload?.remoteJidAlt ?? rawPayload?.key?.remoteJidAlt,
         addressingMode: dto.addressingMode ?? rawPayload?.addressingMode ?? rawPayload?.key?.addressingMode,
         participant: dto.participant ?? rawPayload?.participant ?? rawPayload?.key?.participant,
+        deviceSource: dto.deviceSource ?? rawPayload?.deviceSource ?? rawPayload?.rawJson?.deviceSource,
+        instance: dto.instance ?? rawPayload?.instance ?? rawPayload?.rawJson?.instance,
+        instanceId: dto.instanceId ?? rawPayload?.instanceId ?? rawPayload?.rawJson?.instanceId,
         
         // Atribuição
         conversionSource: dto.conversionSource ?? rawPayload?.conversionSource ?? rawPayload?.contextInfo?.conversionSource,
         adSourceId: dto.adSourceId ?? rawPayload?.adSourceId ?? rawPayload?.contextInfo?.externalAdReply?.sourceId,
         ctwaClid: dto.ctwaClid ?? rawPayload?.ctwaClid ?? rawPayload?.contextInfo?.externalAdReply?.ctwaClid,
+        sourceApp:
+          dto.sourceApp ??
+          rawPayload?.sourceApp ??
+          rawPayload?.rawJson?.sourceApp ??
+          rawPayload?.contextInfo?.externalAdReply?.sourceApp ??
+          rawPayload?.rawJson?.contextInfo?.externalAdReply?.sourceApp ??
+          rawPayload?.message?.contextInfo?.externalAdReply?.sourceApp ??
+          rawPayload?.rawJson?.message?.contextInfo?.externalAdReply?.sourceApp,
         adTitle: dto.adTitle ?? rawPayload?.adTitle ?? rawPayload?.contextInfo?.externalAdReply?.title,
         adBody: dto.adBody ?? rawPayload?.adBody ?? rawPayload?.contextInfo?.externalAdReply?.body,
+        adMediaType: dto.adMediaType ?? rawPayload?.adMediaType ?? rawPayload?.contextInfo?.externalAdReply?.mediaType,
         adThumbnailUrl: dto.adThumbnailUrl ?? rawPayload?.adThumbnailUrl ?? rawPayload?.contextInfo?.externalAdReply?.thumbnailUrl,
         adOriginalImageUrl: dto.adOriginalImageUrl ?? rawPayload?.adOriginalImageUrl ?? rawPayload?.contextInfo?.externalAdReply?.originalImageUrl,
         adSourceType: dto.adSourceType ?? rawPayload?.adSourceType ?? rawPayload?.contextInfo?.externalAdReply?.sourceType,
         adSourceUrl: dto.adSourceUrl ?? rawPayload?.adSourceUrl ?? rawPayload?.contextInfo?.externalAdReply?.sourceUrl,
+        adRef: dto.adRef ?? rawPayload?.adRef ?? rawPayload?.rawJson?.adRef,
         
         // Flags de anúncio
         containsAutoReply: dto.containsAutoReply ?? rawPayload?.containsAutoReply ?? rawPayload?.contextInfo?.externalAdReply?.containsAutoReply,
@@ -130,6 +145,17 @@ export class LeadsService {
         
         entryPointConversionSource: dto.entryPointConversionSource ?? rawPayload?.entryPointConversionSource,
         entryPointConversionApp: dto.entryPointConversionApp ?? rawPayload?.entryPointConversionApp,
+        entryPointConversionExternalSource:
+          dto.entryPointConversionExternalSource ?? rawPayload?.entryPointConversionExternalSource,
+        entryPointConversionExternalMedium:
+          dto.entryPointConversionExternalMedium ?? rawPayload?.entryPointConversionExternalMedium,
+        ctwaSignals: dto.ctwaSignals ?? rawPayload?.ctwaSignals,
+
+        destination: dto.destination ?? rawPayload?.destination ?? rawPayload?.rawJson?.destination,
+        serverUrl: dto.serverUrl ?? rawPayload?.serverUrl ?? rawPayload?.rawJson?.serverUrl,
+        executionMode: dto.executionMode ?? rawPayload?.executionMode ?? rawPayload?.rawJson?.executionMode,
+        receivedAt: dto.receivedAt ?? rawPayload?.receivedAt ?? rawPayload?.rawJson?.receivedAt,
+        eventType: dto.eventType ?? rawPayload?.eventType ?? rawPayload?.rawJson?.eventType,
       };
 
       this.logger.log(`Enriquecendo WhatsappMessage para lead ${createdLead.id} com wamid ${wamid}`);
@@ -166,9 +192,17 @@ export class LeadsService {
     const messageData = {
         userId,
         remoteJid: dto.remoteJid || (dto.contact ? `${dto.contact}@s.whatsapp.net` : 'unknown'),
+        remoteJidAlt: dto.remoteJidAlt,
+        phoneRaw: dto.contact ? dto.contact.replace(/\D/g, '') : undefined,
         pushName: dto.pushName || dto.name,
+        sender: dto.sender,
         fromMe: dto.fromMe ?? false,
+        addressingMode: dto.addressingMode,
+        participant: dto.participant,
         timestamp: dto.messageTimestamp ? new Date(dto.messageTimestamp * 1000) : new Date(),
+        senderTimestamp: dto.senderTimestamp ? BigInt(dto.senderTimestamp) : undefined,
+        recipientTimestamp: dto.recipientTimestamp ? BigInt(dto.recipientTimestamp) : undefined,
+        status: dto.status,
         messageType: dto.messageType,
         conversation: dto.conversation,
         
@@ -183,11 +217,18 @@ export class LeadsService {
         adSourceId: dto.adSourceId,
         adSourceUrl: dto.adSourceUrl,
         ctwaClid: dto.ctwaClid,
+        ref: (dto as any).ref ?? undefined,
         adRef: dto.adRef,
         sourceApp: dto.sourceApp,
         deviceSource: dto.deviceSource,
         instance: dto.instance,
         instanceId: dto.instanceId,
+        containsAutoReply: dto.containsAutoReply,
+        renderLargerThumbnail: dto.renderLargerThumbnail,
+        showAdAttribution: dto.showAdAttribution,
+        wtwaAdFormat: dto.wtwaAdFormat,
+        automatedGreetingMessageShown: dto.automatedGreetingMessageShown,
+        greetingMessageBody: dto.greetingMessageBody,
         
         conversionSource: dto.conversionSource,
         entryPointConversionSource: dto.entryPointConversionSource,
@@ -195,6 +236,12 @@ export class LeadsService {
         entryPointConversionExternalSource: dto.entryPointConversionExternalSource,
         entryPointConversionExternalMedium: dto.entryPointConversionExternalMedium,
         ctwaSignals: dto.ctwaSignals,
+
+        destination: dto.destination,
+        serverUrl: dto.serverUrl,
+        executionMode: dto.executionMode,
+        receivedAt: dto.receivedAt ? new Date(dto.receivedAt) : undefined,
+        eventType: dto.eventType,
 
         // Enriquecimento (Meta CAPI)
         hashedEmail,
@@ -209,7 +256,7 @@ export class LeadsService {
         originPlatform: 'WhatsApp',
         
         // Salva o rawJson se vier (N8N pode mandar o objeto completo)
-        rawJson: dto.rawJson ?? undefined
+        rawJson: dto.rawJson ? this.redactSecrets(dto.rawJson) : undefined
     };
 
     // Cast para any necessário pois o editor pode não ter atualizado os tipos do Prisma gerados recentemente
@@ -378,5 +425,30 @@ export class LeadsService {
         fb_login_id: event.ctwaClid
       }
     }));
+  }
+
+  private redactSecrets(value: any): any {
+    if (value === null || value === undefined) return value;
+    if (Array.isArray(value)) return value.map((item) => this.redactSecrets(item));
+    if (typeof value !== 'object') return value;
+
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const key = k.toLowerCase();
+      if (
+        key === 'apikey' ||
+        key === 'api_key' ||
+        key === 'authorization' ||
+        key === 'token' ||
+        key === 'access_token' ||
+        key === 'refresh_token' ||
+        key.includes('secret')
+      ) {
+        out[k] = '[REDACTED]';
+      } else {
+        out[k] = this.redactSecrets(v);
+      }
+    }
+    return out;
   }
 }

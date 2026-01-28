@@ -10,7 +10,10 @@ export class EvolutionWebhookService {
 
   async handleWebhook(payload: any) {
     // 1. Validar se é um evento de mensagem
-    if (payload.event !== 'messages.upsert') {
+    const eventRaw = (payload?.event ?? payload?.eventType ?? '').toString();
+    const normalizedEvent = eventRaw.toLowerCase().replace(/_/g, '.');
+
+    if (normalizedEvent !== 'messages.upsert') {
       return;
     }
 
@@ -70,11 +73,19 @@ export class EvolutionWebhookService {
     }
 
     // 4. Extrair dados de atribuição (CTWA)
-    const ctx = message?.messageContextInfo || contextInfo; // Às vezes vem fora
-    // No exemplo do usuário está em `data.message.contextInfo` e `data.contextInfo`?
-    // O exemplo mostra `data.contextInfo` com `conversionSource`.
-    
-    const attributionData = data.contextInfo || {};
+    const ctx =
+      contextInfo ??
+      message?.contextInfo ??
+      message?.extendedTextMessage?.contextInfo ??
+      message?.imageMessage?.contextInfo ??
+      message?.videoMessage?.contextInfo ??
+      message?.documentMessage?.contextInfo ??
+      message?.stickerMessage?.contextInfo ??
+      message?.audioMessage?.contextInfo ??
+      message?.buttonsResponseMessage?.contextInfo ??
+      message?.listResponseMessage?.contextInfo;
+
+    const attributionData = ctx ?? data.contextInfo ?? {};
     const externalAdReply = attributionData.externalAdReply || {};
 
     const isAd = attributionData.conversionSource === 'FB_Ads' || !!externalAdReply.sourceId;
@@ -98,6 +109,7 @@ export class EvolutionWebhookService {
 
     // 6. Salvar no Banco (Create only - Append Log)
     try {
+      const safePayload = this.redactSecrets(payload);
       // Cast para any para evitar erro de tipo temporário do Prisma
       await (this.prisma as any).whatsappMessage.create({
         data: {
@@ -123,11 +135,13 @@ export class EvolutionWebhookService {
           adSourceId: externalAdReply.sourceId,
           adSourceUrl: externalAdReply.sourceUrl,
           ctwaClid: externalAdReply.ctwaClid,
-          sourceApp: externalAdReply.sourceApp,
+          sourceApp: externalAdReply.sourceApp ?? attributionData.sourceApp ?? data.sourceApp ?? payload.sourceApp,
           
           conversionSource: attributionData.conversionSource,
           entryPointConversionSource: attributionData.entryPointConversionSource,
           entryPointConversionApp: attributionData.entryPointConversionApp,
+
+          eventType: normalizedEvent,
 
           // Enriquecimento (Meta CAPI)
           hashedPhone,
@@ -137,7 +151,7 @@ export class EvolutionWebhookService {
           messagingChannel: 'WhatsApp',
           originPlatform: 'WhatsApp',
           
-          rawJson: payload
+          rawJson: safePayload
         }
       });
       
@@ -163,5 +177,30 @@ export class EvolutionWebhookService {
     // Normalização Meta: lowercase, trim
     const normalized = data.trim().toLowerCase();
     return createHash('sha256').update(normalized).digest('hex');
+  }
+
+  private redactSecrets(value: any): any {
+    if (value === null || value === undefined) return value;
+    if (Array.isArray(value)) return value.map((item) => this.redactSecrets(item));
+    if (typeof value !== 'object') return value;
+
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(value)) {
+      const key = k.toLowerCase();
+      if (
+        key === 'apikey' ||
+        key === 'api_key' ||
+        key === 'authorization' ||
+        key === 'token' ||
+        key === 'access_token' ||
+        key === 'refresh_token' ||
+        key.includes('secret')
+      ) {
+        out[k] = '[REDACTED]';
+      } else {
+        out[k] = this.redactSecrets(v);
+      }
+    }
+    return out;
   }
 }

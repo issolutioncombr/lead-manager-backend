@@ -202,6 +202,30 @@ export class CreateLeadDto {
   @IsObject()
   rawJson?: any;
 
+  @IsOptional()
+  @IsString()
+  destination?: string;
+
+  @IsOptional()
+  @IsString()
+  serverUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  apikey?: string;
+
+  @IsOptional()
+  @IsString()
+  executionMode?: string;
+
+  @IsOptional()
+  @IsString()
+  receivedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  eventType?: string;
+
   // Suporte para payload N8N (lowercase)
   @IsOptional()
   rawjson?: any;

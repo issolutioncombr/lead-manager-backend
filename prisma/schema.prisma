@@ -483,6 +483,13 @@ model WhatsappMessage {
   ctwaSignals                String?
   adRef                      String?
 
+  // Infra / rastreabilidade (substitui necessidade do rawJson no futuro)
+  destination   String? @db.Text
+  serverUrl     String? @db.Text
+  executionMode String?
+  receivedAt    DateTime?
+  eventType     String?
+
   // Flags e Metadata Adicionais
   containsAutoReply           Boolean? @default(false)
   renderLargerThumbnail       Boolean? @default(false)
