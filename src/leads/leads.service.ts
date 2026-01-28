@@ -303,9 +303,121 @@ export class LeadsService {
         newStage: dto.stage,
         appointment: options?.relatedAppointment ?? null
       });
+
+      await this.applyLeadStageToWhatsappMessage(userId, updatedLead.id, dto.stage);
     }
 
     return updatedLead;
+  }
+
+  private async applyLeadStageToWhatsappMessage(userId: string, leadId: string, newStage: LeadStage) {
+    const whatsappMessage = await (this.prisma as any).whatsappMessage.findFirst({
+      where: { userId, externalId: leadId },
+      orderBy: { timestamp: 'desc' }
+    });
+
+    if (!whatsappMessage) return;
+
+    const raw = this.getWhatsappRawPayload(whatsappMessage.rawJson);
+
+    const updateData: Record<string, any> = {
+      eventName: this.getMetaEventName(newStage),
+      leadStage: this.formatLeadStageLabel(newStage)
+    };
+
+    const mappedFromRaw = this.mapWhatsappColumnsFromRawJson(raw);
+
+    await (this.prisma as any).whatsappMessage.update({
+      where: { wamid: whatsappMessage.wamid },
+      data: {
+        ...mappedFromRaw,
+        ...updateData
+      }
+    });
+  }
+
+  private getWhatsappRawPayload(rawJson: any): any {
+    if (!rawJson) return null;
+    if (typeof rawJson !== 'object') return null;
+    return rawJson.rawJson && typeof rawJson.rawJson === 'object' ? rawJson.rawJson : rawJson;
+  }
+
+  private mapWhatsappColumnsFromRawJson(raw: any): Record<string, any> {
+    if (!raw || typeof raw !== 'object') return {};
+
+    return {
+      remoteJid: raw.remoteJid ?? undefined,
+      remoteJidAlt: raw.remoteJidAlt ?? undefined,
+      fromMe: raw.fromMe ?? undefined,
+      addressingMode: raw.addressingMode ?? undefined,
+      participant: raw.participant ?? undefined,
+      pushName: raw.pushName ?? raw.name ?? undefined,
+      sender: raw.sender ?? undefined,
+      status: raw.status ?? undefined,
+      messageType: raw.messageType ?? undefined,
+      conversation: raw.conversation ?? raw.messageText ?? raw.message?.conversation ?? undefined,
+      senderTimestamp: raw.senderTimestamp ? BigInt(raw.senderTimestamp) : undefined,
+      recipientTimestamp: raw.recipientTimestamp ? BigInt(raw.recipientTimestamp) : undefined,
+      deviceSource: raw.deviceSource ?? undefined,
+      instance: raw.instance ?? undefined,
+      instanceId: raw.instanceId ?? undefined,
+      adSourceType: raw.adSourceType ?? undefined,
+      adSourceId: raw.adSourceId ?? undefined,
+      adSourceUrl: raw.adSourceUrl ?? undefined,
+      sourceApp: raw.sourceApp ?? undefined,
+      ctwaClid: raw.ctwaClid ?? undefined,
+      adTitle: raw.adTitle ?? undefined,
+      adBody: raw.adBody ?? undefined,
+      adMediaType: raw.adMediaType ?? undefined,
+      adThumbnailUrl: raw.adThumbnailUrl ?? undefined,
+      adOriginalImageUrl: raw.adOriginalImageUrl ?? undefined,
+      containsAutoReply: raw.containsAutoReply ?? undefined,
+      renderLargerThumbnail: raw.renderLargerThumbnail ?? undefined,
+      showAdAttribution: raw.showAdAttribution ?? undefined,
+      wtwaAdFormat: raw.wtwaAdFormat ?? undefined,
+      automatedGreetingMessageShown: raw.automatedGreetingMessageShown ?? undefined,
+      greetingMessageBody: raw.greetingMessageBody ?? undefined,
+      entryPointConversionSource: raw.entryPointConversionSource ?? undefined,
+      entryPointConversionApp: raw.entryPointConversionApp ?? undefined,
+      entryPointConversionExternalSource: raw.entryPointConversionExternalSource ?? undefined,
+      entryPointConversionExternalMedium: raw.entryPointConversionExternalMedium ?? undefined,
+      ctwaSignals: raw.ctwaSignals ?? undefined,
+      adRef: raw.adRef ?? undefined,
+      destination: raw.destination ?? undefined,
+      serverUrl: raw.serverUrl ?? undefined,
+      executionMode: raw.executionMode ?? undefined,
+      receivedAt: raw.receivedAt ? new Date(raw.receivedAt) : undefined,
+      eventType: raw.eventType ?? undefined,
+      rawJson: this.redactSecrets(raw)
+    };
+  }
+
+  private getMetaEventName(stage: LeadStage): string {
+    switch (stage) {
+      case 'NOVO':
+        return 'Lead';
+      case 'AGENDOU_CALL':
+        return 'Schedule';
+      case 'ENTROU_CALL':
+        return 'QualifiedLead';
+      case 'COMPROU':
+        return 'Purchase';
+      case 'NO_SHOW':
+        return 'NoShow';
+      default:
+        return 'Lead';
+    }
+  }
+
+  private formatLeadStageLabel(stage: LeadStage): string {
+    const labels: Record<LeadStage, string> = {
+      NOVO: 'Novo',
+      AGENDOU_CALL: 'Agendou uma call',
+      ENTROU_CALL: 'Entrou na call',
+      COMPROU: 'Comprou',
+      NO_SHOW: 'Nao compareceu'
+    };
+    return labels[stage] ?? stage;
   }
 
   async delete(userId: string, id: string): Promise<Lead> {
