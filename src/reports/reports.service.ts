@@ -1,7 +1,13 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { AppointmentStatus, LeadStage } from '@prisma/client';
 import dayjs from 'dayjs';
+import customParseFormat from 'dayjs/plugin/customParseFormat';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 import weekOfYear from 'dayjs/plugin/weekOfYear';
+dayjs.extend(customParseFormat);
+dayjs.extend(utc);
+dayjs.extend(timezone);
 dayjs.extend(weekOfYear);
 
 import { PrismaService } from '../prisma/prisma.service';
@@ -16,6 +22,25 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService
   ) {}
+
+  private resolveDayRange(date?: string) {
+    const tz = 'America/Sao_Paulo';
+    const dateStr = date?.trim() || dayjs().tz(tz).format('YYYY-MM-DD');
+
+    const isValid = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) && dayjs(dateStr, 'YYYY-MM-DD', true).isValid();
+    if (!isValid) {
+      throw new BadRequestException('Data invalida. Use YYYY-MM-DD.');
+    }
+
+    const start = dayjs.tz(dateStr, 'YYYY-MM-DD', tz).startOf('day');
+    const end = start.add(1, 'day');
+
+    return {
+      date: dateStr,
+      start: start.toDate(),
+      end: end.toDate()
+    };
+  }
 
   async funnel(userId: string) {
     const qualifiedStages = [
@@ -94,6 +119,77 @@ export class ReportsService {
       byWeek: Object.entries(byWeek)
         .map(([label, total]) => ({ label, total }))
         .sort((a, b) => (a.label > b.label ? 1 : -1))
+    };
+  }
+
+  async dashboard(userId: string, date?: string) {
+    const range = this.resolveDayRange(date);
+
+    const whereLead = {
+      userId,
+      createdAt: {
+        gte: range.start,
+        lt: range.end
+      }
+    };
+
+    const [totalLeads, leadsByStage, leadsBySource] = await Promise.all([
+      this.prisma.lead.count({ where: whereLead }),
+      this.prisma.lead.groupBy({
+        by: ['stage'],
+        where: whereLead,
+        _count: { _all: true }
+      }),
+      this.prisma.lead.groupBy({
+        by: ['source'],
+        where: whereLead,
+        _count: { _all: true }
+      })
+    ]);
+
+    const stageCounts = leadsByStage.reduce<Record<string, number>>((acc, item) => {
+      acc[item.stage] = item._count._all;
+      return acc;
+    }, {});
+
+    const stageOrder: LeadStage[] = [
+      LeadStage.NOVO,
+      LeadStage.AGENDOU_CALL,
+      LeadStage.ENTROU_CALL,
+      LeadStage.COMPROU,
+      LeadStage.NO_SHOW
+    ];
+
+    const top5Statuses = stageOrder.map((stage) => {
+      const count = stageCounts[stage] ?? 0;
+      const percent = totalLeads ? Number(((count / totalLeads) * 100).toFixed(2)) : 0;
+      return {
+        status: stage,
+        count,
+        percent
+      };
+    });
+
+    const normalizedSourceCounts = leadsBySource.reduce<Record<string, number>>((acc, item) => {
+      const raw = item.source ?? '';
+      const key = raw.trim() ? raw.trim() : 'Nao informado';
+      acc[key] = (acc[key] ?? 0) + item._count._all;
+      return acc;
+    }, {});
+
+    const origins = Object.entries(normalizedSourceCounts)
+      .map(([origin, count]) => ({
+        origin,
+        count,
+        percent: totalLeads ? Number(((count / totalLeads) * 100).toFixed(2)) : 0
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    return {
+      date: range.date,
+      totalLeads,
+      top5Statuses,
+      origins
     };
   }
 }

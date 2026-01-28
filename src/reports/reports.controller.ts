@@ -1,4 +1,4 @@
-﻿import { Controller, Get, Query } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ReportsService } from './reports.service';
@@ -34,5 +34,13 @@ export class ReportsController {
     @Query('end') end?: string
   ) {
     return this.reportsService.appointments(user.userId, { start, end });
+  }
+
+  @Get('dashboard')
+  dashboard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('date') date?: string
+  ) {
+    return this.reportsService.dashboard(user.userId, date);
   }
 }

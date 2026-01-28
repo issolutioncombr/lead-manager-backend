@@ -1,11 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import nodemailer from 'nodemailer';
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name);
   constructor(private readonly config: ConfigService) {}
-// dsds
+
   async sendPasswordResetEmail(to: string, resetUrl: string): Promise<void> {
     const host = this.config.get<string>('SMTP_HOST');
     const user = this.config.get<string>('SMTP_USER');
@@ -16,8 +17,6 @@ export class MailService {
     // Try to send with nodemailer if available, otherwise log the link
     if (host && user && pass) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const nodemailer: any = require('nodemailer');
         const transport = nodemailer.createTransport({
           host,
           port,
@@ -37,7 +36,7 @@ export class MailService {
         });
         this.logger.log(`Reset de senha enviado para ${to}`);
         return;
-      } catch (err) {
+      } catch {
         this.logger.warn('Falha ao enviar e‑mail com nodemailer. Caindo para log.');
       }
     }
@@ -45,4 +44,3 @@ export class MailService {
     this.logger.log(`Link de redefinição para ${to}: ${resetUrl}`);
   }
 }
-

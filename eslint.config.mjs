@@ -1,5 +1,14 @@
-const { FlatCompat } = require('@eslint/eslintrc');
-const js = require('@eslint/js');
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { FlatCompat } from '@eslint/eslintrc';
+import js from '@eslint/js';
+import tseslint from '@typescript-eslint/eslint-plugin';
+import tsParser from '@typescript-eslint/parser';
+import importPlugin from 'eslint-plugin-import';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const compat = new FlatCompat({
   baseDirectory: __dirname,
@@ -8,7 +17,10 @@ const compat = new FlatCompat({
   allConfig: js.configs.all
 });
 
-module.exports = [
+export default [
+  {
+    ignores: ['prisma/seed.d.ts']
+  },
   ...compat.extends('eslint:recommended'),
   ...compat.config({
     env: {
@@ -25,26 +37,34 @@ module.exports = [
   {
     files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
-      parser: require('@typescript-eslint/parser'),
+      parser: tsParser,
       parserOptions: {
         project: ['./tsconfig.json'],
         tsconfigRootDir: __dirname
       }
     },
     plugins: {
-      '@typescript-eslint': require('@typescript-eslint/eslint-plugin'),
-      import: require('eslint-plugin-import')
+      '@typescript-eslint': tseslint,
+      import: importPlugin
     },
     rules: {
       '@typescript-eslint/no-unused-vars': [
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }
       ],
+      '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-require-imports': 'warn',
       'import/order': [
-        'error',
+        'warn',
         {
-          groups: ['builtin', 'external', 'internal', ['parent', 'sibling', 'index'], 'object'],
-          newlinesBetween: 'always',
+          groups: [
+            'builtin',
+            'external',
+            'internal',
+            ['parent', 'sibling', 'index'],
+            'object'
+          ],
+          'newlines-between': 'always',
           alphabetize: {
             order: 'asc',
             caseInsensitive: true
