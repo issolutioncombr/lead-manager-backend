@@ -346,6 +346,7 @@ export class LeadsService {
     if (!raw || typeof raw !== 'object') return {};
 
     return {
+      timestamp: raw.messageTimestamp ? new Date(raw.messageTimestamp * 1000) : undefined,
       remoteJid: raw.remoteJid ?? undefined,
       remoteJidAlt: raw.remoteJidAlt ?? undefined,
       fromMe: raw.fromMe ?? undefined,
@@ -377,6 +378,7 @@ export class LeadsService {
       wtwaAdFormat: raw.wtwaAdFormat ?? undefined,
       automatedGreetingMessageShown: raw.automatedGreetingMessageShown ?? undefined,
       greetingMessageBody: raw.greetingMessageBody ?? undefined,
+      conversionSource: raw.conversionSource ?? undefined,
       entryPointConversionSource: raw.entryPointConversionSource ?? undefined,
       entryPointConversionApp: raw.entryPointConversionApp ?? undefined,
       entryPointConversionExternalSource: raw.entryPointConversionExternalSource ?? undefined,
@@ -489,8 +491,7 @@ export class LeadsService {
     const events = await (this.prisma as any).whatsappMessage.findMany({
       where: {
         userId,
-        eventName: { not: null }, // Apenas eventos qualificados
-        ctwaClid: { not: null }   // Apenas eventos com atribuição
+        eventName: { not: null } // Apenas eventos qualificados
       },
       select: {
         eventName: true,
@@ -507,36 +508,60 @@ export class LeadsService {
         contentCategory: true,
         leadStage: true,
         messagingChannel: true,
-        originPlatform: true
+        originPlatform: true,
+        rawJson: true
       },
       orderBy: {
         timestamp: 'desc'
       }
     });
 
-    return events.map((event: any) => ({
-      event_name: event.eventName,
-      event_time: Math.floor(new Date(event.timestamp).getTime() / 1000),
-      action_source: "chat",
-      user_data: {
-        em: event.hashedEmail ? [event.hashedEmail] : [],
-        ph: event.hashedPhone ? [event.hashedPhone] : [],
-        fn: event.hashedFirstName ? [event.hashedFirstName] : [],
-        ln: event.hashedLastName ? [event.hashedLastName] : [],
-        external_id: event.externalId ? [event.externalId] : []
-      },
-      custom_data: {
-        currency: "BRL",
-        value: 0, // Ajustar conforme a lógica de valor
-        content_name: event.contentName || "Lead WhatsApp",
-        content_category: event.contentCategory || "CRM",
-        lead_stage: event.leadStage,
-        messaging_channel: event.messagingChannel,
-        origin_platform: event.originPlatform,
-        ad_id: event.adSourceId,
-        fb_login_id: event.ctwaClid
-      }
-    }));
+    const mapped = events
+      .map((event: any) => {
+        const raw = this.getWhatsappRawPayload(event.rawJson);
+        const ctwaClid =
+          event.ctwaClid ??
+          raw?.ctwaClid ??
+          raw?.contextInfo?.externalAdReply?.ctwaClid ??
+          raw?.message?.contextInfo?.externalAdReply?.ctwaClid ??
+          null;
+
+        if (!ctwaClid) return null;
+
+        const adSourceId =
+          event.adSourceId ??
+          raw?.adSourceId ??
+          raw?.contextInfo?.externalAdReply?.sourceId ??
+          raw?.message?.contextInfo?.externalAdReply?.sourceId ??
+          null;
+
+        return {
+          event_name: event.eventName,
+          event_time: Math.floor(new Date(event.timestamp).getTime() / 1000),
+          action_source: 'chat',
+          user_data: {
+            em: event.hashedEmail ? [event.hashedEmail] : [],
+            ph: event.hashedPhone ? [event.hashedPhone] : [],
+            fn: event.hashedFirstName ? [event.hashedFirstName] : [],
+            ln: event.hashedLastName ? [event.hashedLastName] : [],
+            external_id: event.externalId ? [event.externalId] : []
+          },
+          custom_data: {
+            currency: 'BRL',
+            value: 0,
+            content_name: event.contentName || 'Lead WhatsApp',
+            content_category: event.contentCategory || 'CRM',
+            lead_stage: event.leadStage,
+            messaging_channel: event.messagingChannel,
+            origin_platform: event.originPlatform,
+            ad_id: adSourceId,
+            fb_login_id: ctwaClid
+          }
+        };
+      })
+      .filter(Boolean);
+
+    return mapped;
   }
 
   private redactSecrets(value: any): any {

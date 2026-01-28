@@ -51,6 +51,25 @@ export class LeadStatusWebhookService {
         orderBy: { start: 'desc' }
       }));
 
+    const whatsappMessage = await (this.prisma as any).whatsappMessage.findFirst({
+      where: { userId: params.userId, externalId: params.lead.id },
+      orderBy: { timestamp: 'desc' },
+      select: {
+        wamid: true,
+        timestamp: true,
+        ctwaClid: true,
+        adSourceId: true,
+        conversionSource: true,
+        entryPointConversionSource: true,
+        entryPointConversionApp: true,
+        messageType: true,
+        conversation: true,
+        rawJson: true
+      }
+    });
+
+    const wa = this.extractWhatsappPayload(whatsappMessage);
+
     let email = params.lead.email;
     let contact = params.lead.contact;
 
@@ -85,7 +104,17 @@ export class LeadStatusWebhookService {
       call_fim: appointment ? this.formatDate(appointment.end) : null,
       call_data: appointment ? dayjs(appointment.start).tz(this.timezone).format('DD/MM/YYYY') : null,
       call_hora: appointment ? dayjs(appointment.start).tz(this.timezone).format('HH:mm') : null,
-      call_status: appointment ? this.formatCallStatus(appointment.status) : null
+      call_status: appointment ? this.formatCallStatus(appointment.status) : null,
+
+      ctwaClid: wa.ctwaClid,
+      adSourceId: wa.adSourceId,
+      conversionSource: wa.conversionSource,
+      entryPointConversionSource: wa.entryPointConversionSource,
+      entryPointConversionApp: wa.entryPointConversionApp,
+      messageTimestamp: wa.messageTimestamp,
+      messageType: wa.messageType,
+      conversation: wa.conversation,
+      wamid: wa.wamid
     };
 
     try {
@@ -145,5 +174,63 @@ export class LeadStatusWebhookService {
     } catch {
       return date.toISOString();
     }
+  }
+
+  private extractWhatsappPayload(whatsappMessage: any) {
+    const raw = this.getWhatsappRawPayload(whatsappMessage?.rawJson);
+
+    const ts = whatsappMessage?.timestamp ? new Date(whatsappMessage.timestamp) : null;
+    const messageTimestamp =
+      raw?.messageTimestamp ?? (ts ? Math.floor(ts.getTime() / 1000) : null);
+
+    const ctwaClid =
+      whatsappMessage?.ctwaClid ??
+      raw?.ctwaClid ??
+      raw?.contextInfo?.externalAdReply?.ctwaClid ??
+      raw?.message?.contextInfo?.externalAdReply?.ctwaClid ??
+      null;
+
+    const adSourceId =
+      whatsappMessage?.adSourceId ??
+      raw?.adSourceId ??
+      raw?.contextInfo?.externalAdReply?.sourceId ??
+      raw?.message?.contextInfo?.externalAdReply?.sourceId ??
+      null;
+
+    const conversionSource =
+      whatsappMessage?.conversionSource ?? raw?.conversionSource ?? raw?.contextInfo?.conversionSource ?? null;
+
+    const entryPointConversionSource =
+      whatsappMessage?.entryPointConversionSource ?? raw?.entryPointConversionSource ?? null;
+
+    const entryPointConversionApp =
+      whatsappMessage?.entryPointConversionApp ?? raw?.entryPointConversionApp ?? null;
+
+    const messageType = whatsappMessage?.messageType ?? raw?.messageType ?? null;
+
+    const conversation =
+      whatsappMessage?.conversation ??
+      raw?.conversation ??
+      raw?.messageText ??
+      raw?.message?.conversation ??
+      null;
+
+    return {
+      wamid: whatsappMessage?.wamid ?? raw?.wamid ?? raw?.key?.id ?? null,
+      messageTimestamp,
+      ctwaClid,
+      adSourceId,
+      conversionSource,
+      entryPointConversionSource,
+      entryPointConversionApp,
+      messageType,
+      conversation
+    };
+  }
+
+  private getWhatsappRawPayload(rawJson: any): any {
+    if (!rawJson) return null;
+    if (typeof rawJson !== 'object') return null;
+    return rawJson.rawJson && typeof rawJson.rawJson === 'object' ? rawJson.rawJson : rawJson;
   }
 }
