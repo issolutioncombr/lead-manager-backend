@@ -8,6 +8,7 @@ import type { EvolutionSessionResponse } from './evolution-integration.service';
 import { EvolutionGenerateQrDto } from './dto/evolution-generate-qr.dto';
 import { EvolutionCreateInstanceDto } from './dto/evolution-create-instance.dto';
 import { EvolutionLookupQueryDto } from './dto/evolution-lookup-query.dto';
+import { EvolutionRegisterExistingDto } from './dto/evolution-register-existing.dto';
 
 type AuthenticatedUser = {
   userId: string;
@@ -52,6 +53,18 @@ export class EvolutionController {
     );
   }
 
+  @Post('instances/register')
+  registerExisting(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: EvolutionRegisterExistingDto
+  ): Promise<EvolutionSessionResponse> {
+    return this.evolutionIntegrationService.registerExistingInstance(
+      user.userId,
+      dto.instanceName,
+      dto.token
+    );
+  }
+
   @Post('instances/:instanceId/qr')
   refreshQr(
     @CurrentUser() user: AuthenticatedUser,
@@ -83,6 +96,14 @@ export class EvolutionController {
     @Param('instanceId') instanceId: string
   ): Promise<EvolutionSessionResponse> {
     return this.evolutionIntegrationService.removeInstance(user.userId, instanceId);
+  }
+
+  @Delete('instances/:instanceId/detach')
+  detachInstance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('instanceId') instanceId: string
+  ): Promise<EvolutionSessionResponse> {
+    return this.evolutionIntegrationService.detachInstance(user.userId, instanceId);
   }
 
   @Public()

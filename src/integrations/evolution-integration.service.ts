@@ -143,6 +143,61 @@ export class EvolutionIntegrationService {
     };
   }
 
+  async registerExistingInstance(
+    userId: string,
+    instanceName: string,
+    token: string
+  ): Promise<EvolutionSessionResponse> {
+    const existingByDisplay = await this.findInstanceByDisplayName(userId, instanceName);
+    if (existingByDisplay) {
+      throw new BadRequestException('Instancia Evolution com esse nome ja existe.');
+    }
+
+    const summary = await this.evolutionService
+      .fetchInstance(instanceName, token)
+      .catch(() => null);
+
+    if (!summary) {
+      throw new NotFoundException('Instancia Evolution nao encontrada.');
+    }
+
+    const providerState = summary.connectionStatus ?? 'unknown';
+    const status = this.mapStateToStatus(providerState);
+    const number = this.extractPhoneFromSummary(summary);
+    const providerInstanceId = summary.id ?? null;
+    const resolvedInstanceId = summary.instanceName ?? summary.name ?? instanceName;
+
+    const metadata: JsonObject = {
+      displayName: instanceName,
+      lastState: providerState,
+      lastStatusAt: new Date().toISOString(),
+      providerId: providerInstanceId,
+      number: number ?? null,
+      token,
+      profileName: summary.profileName ?? null,
+      profilePicUrl: summary.profilePicUrl ?? null,
+      ownerJid: summary.ownerJid ?? null
+    };
+
+    await this.evolutionModel().create({
+      data: {
+        userId,
+        instanceId: resolvedInstanceId,
+        providerInstanceId,
+        status,
+        metadata
+      }
+    });
+
+    return {
+      instanceId: resolvedInstanceId,
+      status,
+      number,
+      name: summary.profileName ?? instanceName,
+      providerStatus: providerState
+    };
+  }
+
   private resolveSlotConfiguration(
     slotId?: string,
     webhookUrl?: string
@@ -471,6 +526,20 @@ export class EvolutionIntegrationService {
     status: 'disconnected',
     pairingCode: null
   };
+  }
+
+  async detachInstance(userId: string, instanceId: string): Promise<EvolutionSessionResponse> {
+    const instance = await this.getOwnedInstance(userId, instanceId);
+
+    await this.evolutionModel().delete({
+      where: { id: instance.id }
+    });
+
+    return {
+      instanceId,
+      status: 'disconnected',
+      pairingCode: null
+    };
   }
 
   async getCurrentSession(userId: string): Promise<EvolutionSessionResponse | null> {
@@ -1030,4 +1099,3 @@ export class EvolutionIntegrationService {
     };
   }
 }
-
