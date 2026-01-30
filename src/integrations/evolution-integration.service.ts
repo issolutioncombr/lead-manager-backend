@@ -195,6 +195,32 @@ export class EvolutionIntegrationService {
       };
     }
 
+    const existingGlobal = await this.evolutionModel().findFirst({
+      where: { instanceId: resolvedInstanceId }
+    });
+
+    if (existingGlobal) {
+      const mergedMeta = this.mergeMetadata(existingGlobal.metadata, metadataPatch);
+      const updated = await (this.prisma as any).evolutionInstance.update({
+        where: { id: existingGlobal.id },
+        data: {
+          userId,
+          status,
+          providerInstanceId,
+          metadata: mergedMeta,
+          connectedAt: status === 'connected' ? existingGlobal.connectedAt ?? new Date() : null
+        }
+      });
+
+      return {
+        instanceId: updated.instanceId,
+        status,
+        number,
+        name: summary.profileName ?? instanceName,
+        providerStatus: providerState
+      };
+    }
+
     await this.evolutionModel().create({
       data: {
         userId,
