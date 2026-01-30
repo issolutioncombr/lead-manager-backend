@@ -148,11 +148,6 @@ export class EvolutionIntegrationService {
     instanceName: string,
     token: string
   ): Promise<EvolutionSessionResponse> {
-    const existingByDisplay = await this.findInstanceByDisplayName(userId, instanceName);
-    if (existingByDisplay) {
-      throw new BadRequestException('Instancia Evolution com esse nome ja existe.');
-    }
-
     const summary = await this.evolutionService
       .fetchInstance(instanceName, token)
       .catch(() => null);
@@ -167,7 +162,11 @@ export class EvolutionIntegrationService {
     const providerInstanceId = summary.id ?? null;
     const resolvedInstanceId = summary.instanceName ?? summary.name ?? instanceName;
 
-    const metadata: JsonObject = {
+    const existingById = await this.evolutionModel().findFirst({
+      where: { userId, instanceId: resolvedInstanceId }
+    });
+
+    const metadataPatch: JsonObject = {
       displayName: instanceName,
       lastState: providerState,
       lastStatusAt: new Date().toISOString(),
@@ -179,13 +178,30 @@ export class EvolutionIntegrationService {
       ownerJid: summary.ownerJid ?? null
     };
 
+    if (existingById) {
+      await this.updateInstance(existingById, {
+        status,
+        connectedAt: status === 'connected' ? existingById.connectedAt ?? new Date() : null,
+        metadata: metadataPatch,
+        providerInstanceId
+      });
+
+      return {
+        instanceId: existingById.instanceId,
+        status,
+        number,
+        name: summary.profileName ?? instanceName,
+        providerStatus: providerState
+      };
+    }
+
     await this.evolutionModel().create({
       data: {
         userId,
         instanceId: resolvedInstanceId,
         providerInstanceId,
         status,
-        metadata
+        metadata: metadataPatch
       }
     });
 
