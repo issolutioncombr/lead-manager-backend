@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -45,7 +45,14 @@ export class SellersService {
       contactNumber: dto.contactNumber ?? undefined
     };
 
-    return this.sellersRepository.create(userId, data);
+    try {
+      return await this.sellersRepository.create(userId, data);
+    } catch (e: unknown) {
+      if (typeof e === 'object' && e && 'code' in e && (e as any).code === 'P2002') {
+        throw new ConflictException('E-mail ja cadastrado para um vendedor.');
+      }
+      throw e;
+    }
   }
 
   async update(userId: string, id: string, dto: UpdateSellerDto): Promise<SellerSummary> {
@@ -62,7 +69,14 @@ export class SellersService {
       data.mustChangePassword = true;
     }
 
-    return this.sellersRepository.update(id, data);
+    try {
+      return await this.sellersRepository.update(id, data);
+    } catch (e: unknown) {
+      if (typeof e === 'object' && e && 'code' in e && (e as any).code === 'P2002') {
+        throw new ConflictException('E-mail ja cadastrado para um vendedor.');
+      }
+      throw e;
+    }
   }
 
   async delete(userId: string, id: string): Promise<SellerSummary> {

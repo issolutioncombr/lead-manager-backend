@@ -10,7 +10,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-import { Seller, User } from '@prisma/client';
+import { Prisma, Seller, User } from '@prisma/client';
 
 export interface AuthPayload {
   accessToken: string;
@@ -20,6 +20,8 @@ export interface AuthPayload {
     email: string;
     role: string;
     apiKey: string;
+    isAdmin?: boolean;
+    companyName?: string | null;
   };
   seller: {
     id: string;
@@ -61,12 +63,14 @@ export class AuthService {
     }
 
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    await this.usersService.create({
+    const data = {
       email: dto.email,
       name: dto.name,
       password: hashedPassword,
-      role: dto.role ?? 'user'
-    });
+      role: dto.role ?? 'user',
+      companyName: dto.companyName
+    } as unknown as Prisma.UserUncheckedCreateInput;
+    await this.usersService.create(data);
   }
 
   async login(dto: LoginDto): Promise<LoginResponse> {
@@ -104,6 +108,10 @@ export class AuthService {
     if (!passwordMatches) {
       throw new UnauthorizedException('Credenciais invalidas');
     }
+    const approved = (user as User & { isApproved?: boolean }).isApproved;
+    if (!approved) {
+      throw new UnauthorizedException('Usuário pendente de aprovação pelo admin');
+    }
 
     return this.buildAuthPayload(user, null);
   }
@@ -111,7 +119,9 @@ export class AuthService {
   private buildAuthPayload(user: User, seller: Pick<Seller, 'id' | 'name' | 'email'> | null): AuthPayload {
     const payload: Record<string, unknown> = {
       sub: user.id,
-      email: user.email
+      email: user.email,
+      role: user.role,
+      isAdmin: (user as User & { isAdmin?: boolean }).isAdmin
     };
     if (seller) {
       payload['sellerId'] = seller.id;
@@ -128,7 +138,9 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
-        apiKey: user.apiKey
+        apiKey: user.apiKey,
+        isAdmin: (user as User & { isAdmin?: boolean }).isAdmin,
+        companyName: (user as User & { companyName?: string | null }).companyName ?? null
       },
       seller: seller
         ? {

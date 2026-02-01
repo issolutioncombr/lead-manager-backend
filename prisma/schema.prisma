@@ -45,7 +45,10 @@ model User {
   email               String               @unique
   password            String
   name                String
+  companyName         String?
   role                String               @default("admin")
+  isApproved          Boolean              @default(false)
+  isAdmin             Boolean              @default(false)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   apiKey              String               @unique @default(uuid())
