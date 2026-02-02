@@ -487,25 +487,48 @@ export class LeadsService {
     return { filename, content };
   }
 
-  async getLeadMessages(userId: string, leadId: string) {
-    const messages = await (this.prisma as any).whatsappMessage.findMany({
-      where: {
-        userId,
-        OR: [{ leadId }, { externalId: leadId }]
-      },
-      orderBy: { timestamp: 'asc' },
-      select: {
-        id: true,
-        wamid: true,
-        fromMe: true,
-        conversation: true,
-        messageType: true,
-        timestamp: true,
-        pushName: true,
-        phoneRaw: true
-      }
-    });
-    return messages;
+  async getLeadMessages(
+    userId: string,
+    leadId: string,
+    options?: { page?: number; limit?: number; textOnly?: boolean }
+  ) {
+    const page = Math.max(1, options?.page ?? 1);
+    const limit = Math.max(1, Math.min(200, options?.limit ?? 50));
+    const skip = (page - 1) * limit;
+    const baseWhere: Record<string, any> = {
+      userId,
+      OR: [{ leadId }, { externalId: leadId }]
+    };
+    const where =
+      options?.textOnly
+        ? {
+            AND: [
+              baseWhere,
+              { conversation: { not: null } },
+              { conversation: { not: '' } }
+            ]
+          }
+        : baseWhere;
+    const [data, total] = await Promise.all([
+      (this.prisma as any).whatsappMessage.findMany({
+        where,
+        orderBy: { timestamp: 'asc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          wamid: true,
+          fromMe: true,
+          conversation: true,
+          messageType: true,
+          timestamp: true,
+          pushName: true,
+          phoneRaw: true
+        }
+      }),
+      (this.prisma as any).whatsappMessage.count({ where })
+    ]);
+    return { data, total, page, limit };
   }
   async getMetaCapiEvents(userId: string) {
     // Cast para any para evitar erro de tipo temporário do Prisma

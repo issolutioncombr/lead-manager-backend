@@ -41,8 +41,15 @@ export class LeadsController {
   }
 
   @Get(':id/messages')
-  listMessages(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.leadsService.getLeadMessages(user.userId, id);
+  listMessages(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query() query: { page?: string; limit?: string; textOnly?: string }
+  ) {
+    const page = Math.max(1, Number(query.page ?? 1));
+    const limit = Math.max(1, Math.min(200, Number(query.limit ?? 50)));
+    const textOnly = (query.textOnly ?? 'false').toLowerCase() === 'true';
+    return this.leadsService.getLeadMessages(user.userId, id, { page, limit, textOnly });
   }
 
   @Post()
