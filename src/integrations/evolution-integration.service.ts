@@ -78,26 +78,10 @@ export class EvolutionIntegrationService {
     webhookUrl?: string,
     slotId?: string
   ): Promise<EvolutionSessionResponse> {
-    const explicit = (slotId && slotId.trim().length > 0) || (webhookUrl && webhookUrl.trim().length > 0);
-    const { resolvedWebhookUrl, resolvedSlotId } = explicit
-      ? this.resolveSlotConfiguration(slotId, webhookUrl)
-      : await this.resolveAutoSlotConfiguration(userId);
-
-    if (resolvedSlotId) {
-      const slotInUse = await this.evolutionModel().findFirst({
-        where: {
-          userId,
-          metadata: {
-            path: ['slotId'],
-            equals: resolvedSlotId
-          }
-        }
-      });
-
-      if (slotInUse) {
-        throw new BadRequestException('Slot Evolution selecionado ja possui uma instancia criada.');
-      }
-    }
+    const { resolvedWebhookUrl, resolvedSlotId } =
+      webhookUrl && webhookUrl.trim().length > 0
+        ? { resolvedWebhookUrl: webhookUrl.trim(), resolvedSlotId: null }
+        : await this.resolveAutoSlotConfiguration(userId);
 
     const effectiveInstanceName =
       (instanceName && instanceName.trim().length > 0)
