@@ -175,6 +175,14 @@ export class EvolutionWebhookService {
           ]
         };
 
+        await (this.prisma as any).webhook.update({
+          where: { id: createdWebhook.id },
+          data: {
+            outboundJson: this.redactSecrets(outbound),
+            outboundUrl: n8nUrl
+          }
+        });
+
         try {
           const resp = await fetch(n8nUrl, {
             method: 'POST',

@@ -233,6 +233,8 @@ model Webhook {
   receivedAt         DateTime @default(now())
   rawJson            Json?
   jsonrow            Json?
+  outboundJson       Json?
+  outboundUrl        String?
   status             String   @default("received")
   sentAt             DateTime?
   createdAt          DateTime @default(now())
