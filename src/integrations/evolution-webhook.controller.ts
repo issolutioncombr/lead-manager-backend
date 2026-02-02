@@ -9,10 +9,19 @@ export class EvolutionWebhookController {
   @Public() // Webhook é público (protegido por token se configurado, mas aqui deixaremos aberto ou validaremos no service)
   @Post()
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(@Headers('authorization') auth: string | undefined, @Body() payload: any) {
-    const expected = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
-    if (expected && expected.length > 0) {
-      if (!auth || auth !== expected) {
+  async handleWebhook(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedAuth = (process.env.EVOLUTION_WEBHOOK_AUTHORIZATION ?? '').trim();
+    const expectedToken = (process.env.EVOLUTION_WEBHOOK_TOKEN ?? '').trim();
+    const normalize = (v?: string) => (v?.startsWith('Bearer ') ? v.slice(7) : v)?.trim();
+    const provided = normalize(auth) ?? (tokenHeader ?? '').trim();
+
+    if (expectedAuth || expectedToken) {
+      const validValues = [expectedAuth, expectedToken].filter(Boolean);
+      if (!provided || !validValues.includes(provided)) {
         throw new UnauthorizedException('Invalid webhook authorization');
       }
     }
