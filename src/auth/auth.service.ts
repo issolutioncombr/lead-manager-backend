@@ -70,7 +70,14 @@ export class AuthService {
       role: dto.role ?? 'user',
       companyName: dto.companyName
     } as unknown as Prisma.UserUncheckedCreateInput;
-    await this.usersService.create(data);
+    try {
+      await this.usersService.create(data);
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('E-mail ja cadastrado.');
+      }
+      throw err;
+    }
   }
 
   async login(dto: LoginDto): Promise<LoginResponse> {
