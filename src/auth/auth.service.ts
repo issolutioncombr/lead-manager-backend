@@ -54,8 +54,8 @@ export class AuthService {
 
   async register(dto: RegisterDto): Promise<void> {
     const [existingUser, existingSeller] = await Promise.all([
-      this.usersService.findByEmail(dto.email),
-      this.prisma.seller.findUnique({ where: { email: dto.email } })
+      this.prisma.user.findUnique({ where: { email: dto.email }, select: { id: true } }),
+      this.prisma.seller.findUnique({ where: { email: dto.email }, select: { id: true } })
     ]);
 
     if (existingUser || existingSeller) {
