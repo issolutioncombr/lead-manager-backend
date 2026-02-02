@@ -78,10 +78,7 @@ export class EvolutionIntegrationService {
     webhookUrl?: string,
     slotId?: string
   ): Promise<EvolutionSessionResponse> {
-    const { resolvedWebhookUrl, resolvedSlotId } =
-      webhookUrl && webhookUrl.trim().length > 0
-        ? { resolvedWebhookUrl: webhookUrl.trim(), resolvedSlotId: null }
-        : await this.resolveAutoSlotConfiguration(userId);
+    const { resolvedWebhookUrl, resolvedSlotId } = await this.resolveAutoSlotConfiguration(userId);
 
     const effectiveInstanceName =
       (instanceName && instanceName.trim().length > 0)
