@@ -18,13 +18,13 @@ import { EvolutionInstanceSummary, EvolutionService } from './evolution.service'
 const PRECONFIGURED_EVOLUTION_SLOTS: Record<
   string,
   {
-    webhookUrl: string;
+    webhookUrl: string | null;
   }
 > = {
-  slot1: { webhookUrl: 'https://example.com/webhook/slot1' },
-  slot2: { webhookUrl: 'https://example.com/webhook/slot2' },
-  slot3: { webhookUrl: 'https://example.com/webhook/slot3' },
-  slot4: { webhookUrl: 'https://example.com/webhook/slot4' }
+  slot1: { webhookUrl: process.env.EVOLUTION_SLOT1_WEBHOOK_URL ?? null },
+  slot2: { webhookUrl: process.env.EVOLUTION_SLOT2_WEBHOOK_URL ?? null },
+  slot3: { webhookUrl: process.env.EVOLUTION_SLOT3_WEBHOOK_URL ?? null },
+  slot4: { webhookUrl: process.env.EVOLUTION_SLOT4_WEBHOOK_URL ?? null }
 };
 
 interface EvolutionQrPayload {
