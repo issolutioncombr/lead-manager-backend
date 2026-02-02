@@ -53,10 +53,26 @@ export class EvolutionWebhookService {
     if (instanceRecord) {
       userId = instanceRecord.userId;
     } else {
-      // Fallback: Tenta achar um usuário que tenha esse nome de instância em algum lugar
-      // Ou loga erro. Sem userId não podemos salvar (constraint de FK).
-      this.logger.warn(`Webhook recebido de instância desconhecida: ${instanceName} / ${providerInstanceId}`);
-      return;
+      // Fallback: tenta identificar o usuário pelo apiKey presente no payload
+      const apiKeyFromPayload: string | undefined = payload?.body?.apikey ?? payload?.apikey;
+      if (apiKeyFromPayload && typeof apiKeyFromPayload === 'string' && apiKeyFromPayload.length > 0) {
+        const user = await (this.prisma as any).user.findFirst({
+          where: { apiKey: apiKeyFromPayload }
+        });
+        if (user?.id) {
+          userId = user.id as string;
+          this.logger.warn(
+            `Webhook sem instancia mapeada; usuario identificado por apiKey. instance=${instanceName} providerInstanceId=${providerInstanceId}`
+          );
+        }
+      }
+      // Se ainda não houver userId, registra aviso e segue sem persistir (evita dados órfãos)
+      if (!userId) {
+        this.logger.warn(
+          `Webhook recebido sem instancia conhecida e sem apiKey associada: instance=${instanceName} providerInstanceId=${providerInstanceId}`
+        );
+        return;
+      }
     }
 
     // 3. Extrair dados da mensagem
