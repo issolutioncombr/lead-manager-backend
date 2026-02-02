@@ -487,6 +487,26 @@ export class LeadsService {
     return { filename, content };
   }
 
+  async getLeadMessages(userId: string, leadId: string) {
+    const messages = await (this.prisma as any).whatsappMessage.findMany({
+      where: {
+        userId,
+        OR: [{ leadId }, { externalId: leadId }]
+      },
+      orderBy: { timestamp: 'asc' },
+      select: {
+        id: true,
+        wamid: true,
+        fromMe: true,
+        conversation: true,
+        messageType: true,
+        timestamp: true,
+        pushName: true,
+        phoneRaw: true
+      }
+    });
+    return messages;
+  }
   async getMetaCapiEvents(userId: string) {
     // Cast para any para evitar erro de tipo temporário do Prisma
     const events = await (this.prisma as any).whatsappMessage.findMany({

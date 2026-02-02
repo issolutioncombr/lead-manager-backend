@@ -40,6 +40,11 @@ export class LeadsController {
     return this.leadsService.findById(user.userId, id);
   }
 
+  @Get(':id/messages')
+  listMessages(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.leadsService.getLeadMessages(user.userId, id);
+  }
+
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateLeadDto | CreateLeadDto[]) {
     if (Array.isArray(dto)) {
