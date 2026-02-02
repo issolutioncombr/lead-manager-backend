@@ -40,14 +40,7 @@ export class UsersRepository {
   > {
     return this.prisma.user
       .findMany({
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          role: true,
-          createdAt: true
-        }
+        orderBy: { createdAt: 'desc' }
       })
       .then((rows) =>
         rows.map((r) => ({
@@ -55,7 +48,10 @@ export class UsersRepository {
           name: r.name,
           email: r.email,
           role: r.role,
-          createdAt: r.createdAt
+          createdAt: r.createdAt,
+          companyName: (r as { companyName?: string | null }).companyName ?? null,
+          isApproved: (r as { isApproved?: boolean }).isApproved,
+          isAdmin: (r as { isAdmin?: boolean }).isAdmin
         }))
       );
   }
@@ -65,37 +61,34 @@ export class UsersRepository {
   > {
     return this.prisma.user
       .findMany({
-        orderBy: { createdAt: 'desc' },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          createdAt: true
-        }
+        orderBy: { createdAt: 'desc' }
       })
       .then((rows) =>
-        rows.map((r) => ({
-          id: r.id,
-          name: r.name,
-          email: r.email,
-          createdAt: r.createdAt
-        }))
+        rows
+          .filter((r) => (r as { isApproved?: boolean }).isApproved === false)
+          .map((r) => ({
+            id: r.id,
+            name: r.name,
+            email: r.email,
+            createdAt: r.createdAt,
+            companyName: (r as { companyName?: string | null }).companyName ?? null
+          }))
       );
   }
 
   approveUser(id: string): Promise<{ id: string }> {
-    return this.prisma.user.findUnique({
+    return (this.prisma.user.update as any)({
       where: { id },
+      data: { isApproved: true },
       select: { id: true }
-    }) as Promise<{ id: string }>;
+    });
   }
 
   setAdmin(id: string, isAdmin: boolean): Promise<{ id: string; isAdmin: boolean }> {
-    return this.prisma.user
-      .findUnique({
-        where: { id },
-        select: { id: true }
-      })
-      .then((row) => ({ id: row?.id ?? id, isAdmin }));
+    return (this.prisma.user.update as any)({
+      where: { id },
+      data: { isAdmin },
+      select: { id: true, isAdmin: true }
+    });
   }
 }
