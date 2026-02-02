@@ -149,6 +149,7 @@ model Lead {
   userId       String
   appointments Appointment[]
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  whatsappMessages WhatsappMessage[]
 
   @@index([userId])
 }
@@ -490,6 +491,7 @@ model WhatsappMessage {
   hashedFirstName String? // SHA256 do primeiro nome (fn)
   hashedLastName  String? // SHA256 do sobrenome (ln)
   externalId      String? // ID externo do usuário (external_id)
+  leadId          String?
   
   // Custom Data (Meta CAPI)
   contentName      String? // Ex: "Call Avaliação"
@@ -550,11 +552,13 @@ model WhatsappMessage {
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([remoteJid])
   @@index([timestamp])
   @@index([ctwaClid])
   @@index([slotId])
+  @@index([leadId])
   @@map("whatsapp_messages")
 }

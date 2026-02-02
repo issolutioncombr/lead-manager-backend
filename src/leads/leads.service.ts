@@ -249,6 +249,7 @@ export class LeadsService {
         hashedFirstName,
         hashedLastName,
         externalId: lead.id,
+        leadId: lead.id,
         eventName: 'Lead',
         leadStage: dto.stage ?? 'Novo',
         intent: dto.intent,
@@ -312,7 +313,7 @@ export class LeadsService {
 
   private async applyLeadStageToWhatsappMessage(userId: string, leadId: string, newStage: LeadStage) {
     const whatsappMessage = await (this.prisma as any).whatsappMessage.findFirst({
-      where: { userId, externalId: leadId },
+      where: { userId, OR: [{ leadId }, { externalId: leadId }] },
       orderBy: { timestamp: 'desc' }
     });
 
@@ -428,8 +429,8 @@ export class LeadsService {
     // Cast para any para evitar erro de tipo temporário do Prisma
     await (this.prisma as any).whatsappMessage.deleteMany({
       where: {
-        externalId: id,
-        userId: userId // Garante que só deleta mensagens do próprio usuário
+        userId: userId,
+        OR: [{ externalId: id }, { leadId: id }]
       }
     });
 
