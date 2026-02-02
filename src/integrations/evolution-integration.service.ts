@@ -78,7 +78,10 @@ export class EvolutionIntegrationService {
     webhookUrl?: string,
     slotId?: string
   ): Promise<EvolutionSessionResponse> {
-    const { resolvedWebhookUrl, resolvedSlotId } = this.resolveSlotConfiguration(slotId, webhookUrl);
+    const explicit = (slotId && slotId.trim().length > 0) || (webhookUrl && webhookUrl.trim().length > 0);
+    const { resolvedWebhookUrl, resolvedSlotId } = explicit
+      ? this.resolveSlotConfiguration(slotId, webhookUrl)
+      : await this.resolveAutoSlotConfiguration(userId);
 
     if (resolvedSlotId) {
       const slotInUse = await this.evolutionModel().findFirst({
@@ -275,6 +278,42 @@ export class EvolutionIntegrationService {
 
     throw new BadRequestException(
       'Informe um webhook valido ou selecione um slot Evolution pre-configurado.'
+    );
+  }
+
+  private async resolveAutoSlotConfiguration(
+    userId: string
+  ): Promise<{ resolvedWebhookUrl: string; resolvedSlotId: string | null }> {
+    const usedSlots = new Set<string>();
+    const existing = await this.evolutionModel().findMany({
+      where: { userId },
+      orderBy: { createdAt: 'asc' }
+    });
+    for (const record of existing) {
+      const slot = this.extractSlotIdFromMetadata(record.metadata);
+      if (slot) {
+        usedSlots.add(slot);
+      }
+    }
+
+    for (const key of Object.keys(PRECONFIGURED_EVOLUTION_SLOTS)) {
+      if (!usedSlots.has(key)) {
+        const webhook = PRECONFIGURED_EVOLUTION_SLOTS[key]?.webhookUrl?.trim();
+        if (webhook && webhook.length > 0) {
+          return { resolvedWebhookUrl: webhook, resolvedSlotId: key };
+        }
+      }
+    }
+
+    const base = process.env.EVOLUTION_WEBHOOK_AUTO_BASE?.trim();
+    if (base && base.length > 0) {
+      const normalized = base.replace(/\/$/, '');
+      const url = `${normalized}/webhook/${userId}`;
+      return { resolvedWebhookUrl: url, resolvedSlotId: null };
+    }
+
+    throw new BadRequestException(
+      'Nao ha slots Evolution disponiveis e EVOLUTION_WEBHOOK_AUTO_BASE nao esta configurado.'
     );
   }
 
@@ -1090,6 +1129,15 @@ export class EvolutionIntegrationService {
     const name = record['profileName'] ?? record['name'] ?? record['displayName'];
 
     return typeof name === 'string' && name.length > 0 ? name : null;
+  }
+
+  private extractSlotIdFromMetadata(metadata: JsonValue | null): string | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+    const record = metadata as JsonObject;
+    const slotId = record['slotId'];
+    return typeof slotId === 'string' && slotId.length > 0 ? slotId : null;
   }
 
   private mapStateToStatus(state: string): 'connected' | 'pending' | 'disconnected' {
