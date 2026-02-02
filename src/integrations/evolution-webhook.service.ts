@@ -132,7 +132,7 @@ export class EvolutionWebhookService {
     // 7. Registrar Webhook bruto
     if (userId) {
       const jsonrow = this.buildJsonRow(payload);
-      await (this.prisma as any).webhook.create({
+      const createdWebhook = await (this.prisma as any).webhook.create({
         data: {
           userId,
           instanceId: instanceRecord?.instanceId ?? instanceName ?? null,
@@ -144,6 +144,53 @@ export class EvolutionWebhookService {
           jsonrow
         }
       });
+
+      const n8nUrl = (process.env.N8N_WEBHOOK_URL ?? '').trim();
+      if (n8nUrl) {
+        const userApiKey = await (this.prisma as any).user.findUnique({
+          where: { id: userId },
+          select: { apiKey: true }
+        });
+
+        const outbound = {
+          jsonrow,
+          instance: {
+            userId,
+            instanceId: createdWebhook.instanceId,
+            providerInstanceId: createdWebhook.providerInstanceId,
+            apiKey: userApiKey?.apiKey ?? null
+          },
+          webhooks: [
+            {
+              instance: instanceName ?? createdWebhook.instanceId,
+              instanceId: providerInstanceId ?? createdWebhook.providerInstanceId,
+              number: phoneRaw,
+              id: wamid,
+              fromMe,
+              conversation: conversationText,
+              messageType,
+              name: typeof pushName === 'string' ? pushName : null,
+              timestamp: messageTimestamp?.toString() ?? null
+            }
+          ]
+        };
+
+        try {
+          const resp = await fetch(n8nUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(outbound)
+          });
+          if (resp.ok) {
+            await (this.prisma as any).webhook.update({
+              where: { id: createdWebhook.id },
+              data: { status: 'sent', sentAt: new Date() }
+            });
+          }
+        } catch (err) {
+          this.logger.warn(`Falha ao enviar webhook ao N8N: ${err}`);
+        }
+      }
     }
 
     // 8. Criar lead se não existir
