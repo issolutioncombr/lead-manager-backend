@@ -129,26 +129,6 @@ export class EvolutionWebhookService {
         ? (instanceRecord.metadata as any)?.slotId ?? null
         : null;
 
-    if (userId) {
-      const mapData: any = {
-        userId,
-        phoneRaw,
-        instanceId: instanceRecord?.instanceId ?? instanceName ?? '',
-        providerInstanceId: instanceRecord?.providerInstanceId ?? providerInstanceId ?? null,
-        slotId,
-        webhookUrl:
-          instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
-            ? (instanceRecord.metadata as any)?.webhookUrl ?? null
-            : null
-      };
-
-      await (this.prisma as any).whatsappPhoneInstance.upsert({
-        where: { phoneRaw },
-        update: mapData,
-        create: mapData
-      });
-    }
-
     // 7. Registrar Webhook bruto
     if (userId) {
       await (this.prisma as any).webhook.create({
@@ -164,69 +144,7 @@ export class EvolutionWebhookService {
       });
     }
 
-    // 8. Salvar no Banco (Create only - Append Log)
-    try {
-      const safePayload = this.redactSecrets(payload);
-      // Cast para any para evitar erro de tipo temporário do Prisma
-      await (this.prisma as any).whatsappMessage.create({
-        data: {
-          userId,
-          wamid,
-          remoteJid,
-          phoneRaw,
-          pushName,
-          fromMe,
-          timestamp: new Date(messageTimestamp * 1000), // Timestamp vem em segundos
-          status: data.status,
-          messageType: messageType || Object.keys(message || {})[0],
-          conversation: conversationText,
-          
-          // Atribuição
-          isAd,
-          adTitle: externalAdReply.title,
-          adBody: externalAdReply.body,
-          adMediaType: externalAdReply.mediaType,
-          adThumbnailUrl: externalAdReply.thumbnailUrl,
-          adOriginalImageUrl: externalAdReply.originalImageUrl,
-          adSourceType: externalAdReply.sourceType,
-          adSourceId: externalAdReply.sourceId,
-          adSourceUrl: externalAdReply.sourceUrl,
-          ctwaClid: externalAdReply.ctwaClid,
-          sourceApp: externalAdReply.sourceApp ?? attributionData.sourceApp ?? data.sourceApp ?? payload.sourceApp,
-          
-          conversionSource: attributionData.conversionSource,
-          entryPointConversionSource: attributionData.entryPointConversionSource,
-          entryPointConversionApp: attributionData.entryPointConversionApp,
-
-          eventType: normalizedEvent,
-
-          // Enriquecimento (Meta CAPI)
-          hashedPhone,
-          hashedFirstName,
-          hashedLastName,
-          eventName: 'Lead', // Default inicial, pode ser atualizado ou inserido novo evento depois
-          messagingChannel: 'WhatsApp',
-          originPlatform: 'WhatsApp',
-          instance: instanceName,
-          instanceId: instanceRecord?.instanceId ?? providerInstanceId ?? null,
-          slotId,
-          
-          rawJson: safePayload
-        }
-      });
-      
-      this.logger.log(`Mensagem salva: ${wamid} (User: ${userId})`);
-
-    } catch (error: any) {
-      if (error.code === 'P2002') {
-        this.logger.debug(`Mensagem duplicada ignorada: ${wamid}`);
-      } else {
-        this.logger.error(`Erro ao salvar mensagem: ${error.message}`, error.stack);
-        throw error;
-      }
-    }
-
-    // 9. Criar lead se não existir
+    // 8. Criar lead se não existir
     if (userId && phoneRaw) {
       const existingLead = await (this.prisma as any).lead.findFirst({
         where: { userId, contact: phoneRaw }
