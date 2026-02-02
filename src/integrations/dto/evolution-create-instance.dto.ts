@@ -1,8 +1,9 @@
 import { IsOptional, IsString, IsUrl } from 'class-validator';
 
 export class EvolutionCreateInstanceDto {
+  @IsOptional()
   @IsString()
-  instanceName!: string;
+  instanceName?: string;
 
   @IsOptional()
   @IsUrl()

@@ -74,7 +74,7 @@ export class EvolutionIntegrationService {
 
   async createManagedInstance(
     userId: string,
-    instanceName: string,
+    instanceName?: string,
     webhookUrl?: string,
     slotId?: string
   ): Promise<EvolutionSessionResponse> {
@@ -96,13 +96,18 @@ export class EvolutionIntegrationService {
       }
     }
 
-    const existing = await this.findInstanceByDisplayName(userId, instanceName);
+    const effectiveInstanceName =
+      (instanceName && instanceName.trim().length > 0)
+        ? instanceName.trim()
+        : this.buildUserInstanceName(userId);
+
+    const existing = await this.findInstanceByDisplayName(userId, effectiveInstanceName);
     if (existing) {
       throw new BadRequestException('Instancia Evolution com esse nome ja existe.');
     }
 
     const payload = this.buildManagedInstancePayload(resolvedWebhookUrl);
-    const created = await this.evolutionService.createInstance(instanceName, payload);
+    const created = await this.evolutionService.createInstance(effectiveInstanceName, payload);
 
     const summary = await this.evolutionService
       .fetchInstance(created.id, created.providerId ?? null)
@@ -113,7 +118,7 @@ export class EvolutionIntegrationService {
     const providerStatus = summary?.connectionStatus ?? 'created';
 
     const metadata: JsonObject = {
-      displayName: instanceName,
+      displayName: effectiveInstanceName,
       slotId: resolvedSlotId ?? null,
       lastState: providerStatus,
       lastStatusAt: new Date().toISOString(),
@@ -136,7 +141,7 @@ export class EvolutionIntegrationService {
       instanceId: created.id,
       status: 'disconnected',
       number,
-      name: summary?.profileName ?? instanceName,
+      name: summary?.profileName ?? effectiveInstanceName,
       providerStatus,
       pairingCode: null,
       slotId: resolvedSlotId ?? null
@@ -720,7 +725,7 @@ export class EvolutionIntegrationService {
     userId: string,
     phoneNumber?: string
   ): Promise<EvolutionSessionResponse> {
-    const instanceAlias = this.buildInstanceName(userId);
+    const instanceAlias = this.buildUserInstanceName(userId);
     const created = await this.evolutionService.createInstance(instanceAlias);
     const qrPayload = await this.evolutionService.getQrCode(created.id, phoneNumber ?? undefined);
     const summary = await this.evolutionService
@@ -737,6 +742,7 @@ export class EvolutionIntegrationService {
     const providerInstanceId = summary?.id ?? created.providerId ?? null;
 
     const metadata: JsonObject = {
+      displayName: created.name ?? instanceAlias,
       lastQrSvg: svg,
       lastQrBase64: base64,
       lastQrCode: code,
@@ -861,6 +867,11 @@ export class EvolutionIntegrationService {
         events: ['MESSAGES_UPSERT']
       }
     };
+  }
+
+  private buildUserInstanceName(userId: string): string {
+    const unique = Math.random().toString(36).slice(2, 10);
+    return `${userId}-${unique}`;
   }
 
   private async safeGetState(instanceId: string) {
@@ -1095,10 +1106,10 @@ export class EvolutionIntegrationService {
     return 'disconnected';
   }
 
-  private buildInstanceName(userId: string): string {
-    const suffix = userId.slice(-6);
-    return `clinic-${suffix}`;
-  }
+  // private buildInstanceName(userId: string): string {
+  //   const suffix = userId.slice(-6);
+  //   return `clinic-${suffix}`;
+  // }
 
   async findInstanceOwner(query: {
     instanceId?: string;
