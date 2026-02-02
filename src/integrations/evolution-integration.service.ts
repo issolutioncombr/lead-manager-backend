@@ -545,15 +545,7 @@ export class EvolutionIntegrationService {
   async disconnect(userId: string, instanceId: string): Promise<EvolutionSessionResponse> {
     const instance = await this.getOwnedInstance(userId, instanceId);
 
-    try {
-      await this.evolutionService.logout(instanceId);
-    } catch (error) {
-      if (!(error instanceof HttpException && error.getStatus() === 404)) {
-        throw error;
-      }
-
-      this.logger.warn(`Evolution instance ${instanceId} already missing on provider.`);
-    }
+    await this.safeLogout(instanceId);
 
     await this.updateInstance(instance, {
       status: 'disconnected',
