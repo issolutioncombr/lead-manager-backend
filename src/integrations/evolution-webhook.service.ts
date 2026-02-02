@@ -131,6 +131,7 @@ export class EvolutionWebhookService {
 
     // 7. Registrar Webhook bruto
     if (userId) {
+      const jsonrow = this.buildJsonRow(payload);
       await (this.prisma as any).webhook.create({
         data: {
           userId,
@@ -139,7 +140,8 @@ export class EvolutionWebhookService {
           slotId,
           phoneRaw,
           receivedAt: new Date(),
-          rawJson: payload
+          rawJson: payload,
+          jsonrow
         }
       });
     }
@@ -164,6 +166,82 @@ export class EvolutionWebhookService {
     }
   }
 
+  private buildJsonRow(input: any): Record<string, any> {
+    const body = input?.body ?? {};
+    const data = body?.data ?? {};
+    const cleanPhone = (jid: any) =>
+      typeof jid === 'string' ? jid.replace('@s.whatsapp.net', '').replace(/\D+/g, '').trim() : null;
+    const get = (fn: () => any, fallback: any = null) => {
+      try {
+        const v = fn();
+        return v === undefined ? fallback : v;
+      } catch {
+        return fallback;
+      }
+    };
+    if (!data?.key) return {};
+    const phone = cleanPhone(data?.key?.remoteJid);
+    const msg = data?.message ?? {};
+    const ctxMsg = msg?.messageContextInfo ?? {};
+    const deviceMeta = ctxMsg?.deviceListMetadata ?? {};
+    const contextInfo = data?.contextInfo ?? {};
+    const ad = contextInfo?.externalAdReply ?? {};
+    const messageText =
+      msg?.conversation ??
+      msg?.extendedTextMessage?.text ??
+      msg?.imageMessage?.caption ??
+      null;
+    return {
+      name: data?.pushName ?? null,
+      contact: phone,
+      source: 'WhatsApp',
+      stage: 'Novo',
+      wamid: data?.key?.id ?? null,
+      remoteJid: data?.key?.remoteJid ?? null,
+      remoteJidAlt: data?.key?.remoteJidAlt ?? data?.key?.remoteJid ?? null,
+      fromMe: data?.key?.fromMe ?? null,
+      addressingMode: data?.key?.addressingMode ?? null,
+      participant: data?.key?.participant || null,
+      status: data?.status ?? null,
+      messageType: data?.messageType ?? null,
+      messageTimestamp: data?.messageTimestamp ?? null,
+      messageText,
+      senderTimestamp: get(() => deviceMeta.senderTimestamp?.low),
+      recipientTimestamp: get(() => deviceMeta.recipientTimestamp?.low),
+      deviceSource: data?.source ?? null,
+      instance: body?.instance ?? null,
+      instanceId: data?.instanceId ?? null,
+      sender: body?.sender ?? null,
+      adSourceType: ad?.sourceType ?? null,
+      adSourceId: ad?.sourceId ?? null,
+      adSourceUrl: ad?.sourceUrl ?? null,
+      sourceApp: ad?.sourceApp ?? null,
+      ctwaClid: ad?.ctwaClid ?? null,
+      containsAutoReply: ad?.containsAutoReply ?? null,
+      renderLargerThumbnail: ad?.renderLargerThumbnail ?? null,
+      showAdAttribution: ad?.showAdAttribution ?? null,
+      automatedGreetingMessageShown: ad?.automatedGreetingMessageShown ?? null,
+      greetingMessageBody: ad?.greetingMessageBody ?? null,
+      wtwaAdFormat: ad?.wtwaAdFormat ?? null,
+      adTitle: ad?.title ?? null,
+      adBody: ad?.body ?? null,
+      adThumbnailUrl: ad?.thumbnailUrl ?? null,
+      adMediaType: ad?.mediaType ?? null,
+      entryPointConversionSource: contextInfo?.entryPointConversionSource ?? null,
+      entryPointConversionApp: contextInfo?.entryPointConversionApp ?? null,
+      entryPointConversionExternalSource: contextInfo?.entryPointConversionExternalSource ?? null,
+      entryPointConversionExternalMedium: contextInfo?.entryPointConversionExternalMedium ?? null,
+      ctwaSignals: contextInfo?.ctwaSignals ?? null,
+      destination: body?.destination ?? null,
+      serverUrl: body?.server_url ?? null,
+      apikey: body?.apikey ?? null,
+      executionMode: input?.executionMode ?? null,
+      receivedAt: body?.date_time ?? null,
+      eventType: body?.event ?? null,
+      adOriginalImageUrl: ad?.originalImageUrl ?? null,
+      adRef: ad?.ref ?? null
+    };
+  }
   private normalizePhone(jid: string): string {
     // Remove @s.whatsapp.net e caracteres não numéricos
     return jid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
