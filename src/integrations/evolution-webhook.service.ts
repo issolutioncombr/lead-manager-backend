@@ -133,7 +133,22 @@ export class EvolutionWebhookService {
       });
     }
 
-    // 7. Salvar no Banco (Create only - Append Log)
+    // 7. Registrar Webhook bruto
+    if (userId) {
+      await (this.prisma as any).webhook.create({
+        data: {
+          userId,
+          instanceId: instanceRecord?.instanceId ?? instanceName ?? null,
+          providerInstanceId: instanceRecord?.providerInstanceId ?? providerInstanceId ?? null,
+          slotId,
+          phoneRaw,
+          receivedAt: new Date(),
+          rawJson: payload
+        }
+      });
+    }
+
+    // 8. Salvar no Banco (Create only - Append Log)
     try {
       const safePayload = this.redactSecrets(payload);
       // Cast para any para evitar erro de tipo temporário do Prisma
@@ -192,6 +207,25 @@ export class EvolutionWebhookService {
       } else {
         this.logger.error(`Erro ao salvar mensagem: ${error.message}`, error.stack);
         throw error;
+      }
+    }
+
+    // 9. Criar lead se não existir
+    if (userId && phoneRaw) {
+      const existingLead = await (this.prisma as any).lead.findFirst({
+        where: { userId, contact: phoneRaw }
+      });
+      if (!existingLead) {
+        await (this.prisma as any).lead.create({
+          data: {
+            userId,
+            source: 'WhatsApp',
+            contact: phoneRaw,
+            name: typeof pushName === 'string' ? pushName : null,
+            notes: null,
+            score: 0
+          }
+        });
       }
     }
   }

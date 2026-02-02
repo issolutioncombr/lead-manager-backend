@@ -71,6 +71,7 @@ model User {
   webhookTokens       WebhookToken[]
   whatsappMessages    WhatsappMessage[]
   whatsappPhoneInstances WhatsappPhoneInstance[]
+  webhooks            Webhook[]
 }
 
 model Client {
@@ -220,6 +221,24 @@ model WhatsappPhoneInstance {
 
   @@index([userId])
   @@map("whatsapp_phone_instance")
+}
+
+model Webhook {
+  id                 String   @id @default(cuid())
+  userId             String
+  instanceId         String?
+  providerInstanceId String?
+  slotId             String?
+  phoneRaw           String?
+  receivedAt         DateTime @default(now())
+  rawJson            Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, receivedAt])
+  @@index([phoneRaw])
+  @@map("webhooks")
 }
 
 model Appointment {
