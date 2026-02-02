@@ -47,7 +47,7 @@ export class EvolutionWebhookService {
           { metadata: { path: ['instanceName'], equals: instanceName } }
         ]
       },
-      select: { userId: true }
+      select: { userId: true, instanceId: true, providerInstanceId: true, metadata: true }
     });
 
     if (instanceRecord) {
@@ -107,7 +107,33 @@ export class EvolutionWebhookService {
       }
     }
 
-    // 6. Salvar no Banco (Create only - Append Log)
+    // 6. Determinar slotId e atualizar mapeamento por número
+    const slotId =
+      instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
+        ? (instanceRecord.metadata as any)?.slotId ?? null
+        : null;
+
+    if (userId) {
+      const mapData: any = {
+        userId,
+        phoneRaw,
+        instanceId: instanceRecord?.instanceId ?? instanceName ?? '',
+        providerInstanceId: instanceRecord?.providerInstanceId ?? providerInstanceId ?? null,
+        slotId,
+        webhookUrl:
+          instanceRecord?.metadata && typeof instanceRecord.metadata === 'object'
+            ? (instanceRecord.metadata as any)?.webhookUrl ?? null
+            : null
+      };
+
+      await (this.prisma as any).whatsappPhoneInstance.upsert({
+        where: { phoneRaw },
+        update: mapData,
+        create: mapData
+      });
+    }
+
+    // 7. Salvar no Banco (Create only - Append Log)
     try {
       const safePayload = this.redactSecrets(payload);
       // Cast para any para evitar erro de tipo temporário do Prisma
@@ -150,6 +176,9 @@ export class EvolutionWebhookService {
           eventName: 'Lead', // Default inicial, pode ser atualizado ou inserido novo evento depois
           messagingChannel: 'WhatsApp',
           originPlatform: 'WhatsApp',
+          instance: instanceName,
+          instanceId: instanceRecord?.instanceId ?? providerInstanceId ?? null,
+          slotId,
           
           rawJson: safePayload
         }

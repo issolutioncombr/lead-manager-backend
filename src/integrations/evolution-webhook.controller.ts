@@ -1,4 +1,4 @@
-import { Body, Controller, Post, HttpCode, HttpStatus } from '@nestjs/common';
+import { Body, Controller, Post, HttpCode, HttpStatus, Headers, UnauthorizedException } from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { EvolutionWebhookService } from './evolution-webhook.service';
 
@@ -9,7 +9,13 @@ export class EvolutionWebhookController {
   @Public() // Webhook é público (protegido por token se configurado, mas aqui deixaremos aberto ou validaremos no service)
   @Post()
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(@Body() payload: any) {
+  async handleWebhook(@Headers('authorization') auth: string | undefined, @Body() payload: any) {
+    const expected = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    if (expected && expected.length > 0) {
+      if (!auth || auth !== expected) {
+        throw new UnauthorizedException('Invalid webhook authorization');
+      }
+    }
     // Processa assincronamente para não travar a Evolution
     // Em produção, idealmente usaria uma fila (BullMQ)
     this.webhookService.handleWebhook(payload).catch(err => {

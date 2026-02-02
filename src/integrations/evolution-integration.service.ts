@@ -305,15 +305,15 @@ export class EvolutionIntegrationService {
       }
     }
 
-    const base = process.env.EVOLUTION_WEBHOOK_AUTO_BASE?.trim();
-    if (base && base.length > 0) {
-      const normalized = base.replace(/\/$/, '');
-      const url = `${normalized}/webhook/${userId}`;
+    const backendBase = process.env.BACKEND_PUBLIC_URL?.trim();
+    if (backendBase && backendBase.length > 0) {
+      const normalized = backendBase.replace(/\/$/, '');
+      const url = `${normalized}/api/webhooks/evolution`;
       return { resolvedWebhookUrl: url, resolvedSlotId: null };
     }
 
     throw new BadRequestException(
-      'Nao ha slots Evolution disponiveis e EVOLUTION_WEBHOOK_AUTO_BASE nao esta configurado.'
+      'Nao ha slots Evolution disponiveis e BACKEND_PUBLIC_URL nao esta configurado.'
     );
   }
 
