@@ -274,37 +274,37 @@ export class EvolutionService {
     if (this.discoveredPaths?.conversation) {
       return this.appendQuery(this.discoveredPaths.conversation, { number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
     }
-    const q = `number=${encodeURIComponent(number)}`;
     const candidates = [
-      `/messages/conversation?${q}`,
-      `/chat/conversation?${q}`,
-      `/conversation?${q}`,
-      `/messages/history?${q}`
+      `/messages/conversation`,
+      `/chat/conversation`,
+      `/conversation`,
+      `/messages/history`
     ];
     for (const base of candidates) {
-      const tryPath = this.appendQuery(base, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
+      const tryPath = this.appendQuery(base, { number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
       const ok = await this.probe(tryPath);
       if (ok) {
-        const baseWithQ = base.includes('?') ? base.split('?')[0] + '?' : base + '?';
-        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: baseWithQ };
+        const baseWithoutQuery = base.split('?')[0];
+        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: baseWithoutQuery };
         return tryPath;
       }
     }
-    const fallback = `/messages/conversation?${q}`;
-    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: '/messages/conversation?' };
-    return this.appendQuery(fallback, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
+    const fallbackBase = `/messages/conversation`;
+    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: fallbackBase };
+    return this.appendQuery(fallbackBase, { number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
   }
 
   private appendQuery(path: string, params?: Record<string, any> | undefined): string {
-    if (!params || !Object.keys(params).length) return path;
-    const hasQuery = path.includes('?');
+    if (!params || !Object.keys(params).length) return path.endsWith('?') ? path.slice(0, -1) : path;
+    const base = path.endsWith('?') ? path.slice(0, -1) : path;
+    const hasQuery = base.includes('?');
     const qs = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) {
       if (v === undefined || v === null || v === '') continue;
       qs.append(k, String(v));
     }
     const sep = hasQuery ? '&' : '?';
-    return `${path}${sep}${qs.toString()}`;
+    return `${base}${sep}${qs.toString()}`;
   }
 
   private async probe(path: string): Promise<boolean> {

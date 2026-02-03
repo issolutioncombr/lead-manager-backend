@@ -105,14 +105,33 @@ export class EvolutionMessagesService {
     const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
     const token = await this.resolveToken(userId, opts?.instanceId);
     let items: any[] = [];
-    try {
-      const provider = await this.evolution.getConversation(`+${normalized}`, {
-        limit,
-        token: token ?? undefined,
-        instanceId: opts?.instanceId
-      });
-      items = Array.isArray((provider as any)?.messages) ? (provider as any).messages : (provider as any)?.data ?? [];
-    } catch {
+    const useProvider = (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
+    if (useProvider) {
+      try {
+        const provider = await this.evolution.getConversation(`+${normalized}`, {
+          limit,
+          token: token ?? undefined,
+          instanceId: opts?.instanceId
+        });
+        items = Array.isArray((provider as any)?.messages) ? (provider as any).messages : (provider as any)?.data ?? [];
+      } catch {
+        const local = await (this.prisma as any).whatsappMessage.findMany({
+          where: { userId, phoneRaw: normalized },
+          orderBy: { timestamp: 'asc' },
+          take: limit
+        });
+        items = Array.isArray(local) ? local.map((m: any) => ({
+          id: m.wamid ?? `${normalized}-${m.timestamp?.getTime?.() ?? Date.now()}`,
+          key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
+          message: m.mediaUrl
+            ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
+            : { conversation: m.conversation ?? null },
+          messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
+          messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
+          pushName: m.pushName ?? null
+        })) : [];
+      }
+    } else {
       const local = await (this.prisma as any).whatsappMessage.findMany({
         where: { userId, phoneRaw: normalized },
         orderBy: { timestamp: 'asc' },
@@ -205,10 +224,36 @@ export class EvolutionMessagesService {
   async listChats(userId: string, opts?: { instanceId?: string; limit?: number }) {
     const token = await this.resolveToken(userId, opts?.instanceId);
     let items: any[] = [];
-    try {
-      const provider = await this.evolution.listChats({ instanceId: opts?.instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
-      items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
-    } catch {
+    const useProvider = (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
+    if (useProvider) {
+      try {
+        const provider = await this.evolution.listChats({ instanceId: opts?.instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
+        items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
+      } catch {
+        const recent = await (this.prisma as any).whatsappMessage.findMany({
+          where: { userId },
+          orderBy: { timestamp: 'desc' },
+          take: Math.max(10, Math.min(500, opts?.limit ?? 100))
+        });
+        const seen = new Set<string>();
+        items = [];
+        for (const m of recent) {
+          const phone = (m.phoneRaw ?? '').replace(/\D+/g, '');
+          if (!phone || seen.has(phone)) continue;
+          seen.add(phone);
+          items.push({
+            id: m.wamid ?? phone,
+            remoteJid: `${phone}@s.whatsapp.net`,
+            pushName: m.pushName ?? null,
+            lastMessage: {
+              message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
+              messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
+              key: { fromMe: !!m.fromMe }
+            }
+          });
+        }
+      }
+    } else {
       const recent = await (this.prisma as any).whatsappMessage.findMany({
         where: { userId },
         orderBy: { timestamp: 'desc' },
