@@ -72,6 +72,8 @@ model User {
   whatsappMessages    WhatsappMessage[]
   whatsappPhoneInstances WhatsappPhoneInstance[]
   webhooks            Webhook[]
+  webhookConfigs      WebhookConfig[]
+  botActionLogs       BotActionLog[]
 }
 
 model Client {
@@ -216,12 +218,50 @@ model WhatsappPhoneInstance {
   providerInstanceId String?
   slotId             String?
   webhookUrl         String?
+  botStatus          BotStatus? @default(ATIVO)
+  botTravarAt        DateTime?
+  botPausarAt        DateTime?
+  botReativarAt      DateTime?
+  botWebhookConfigId String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  botWebhookConfig   WebhookConfig? @relation(fields: [botWebhookConfigId], references: [id], onDelete: SetNull)
+  botActionLogs      BotActionLog[]
 
   @@index([userId])
   @@map("whatsapp_phone_instance")
+}
+
+model BotActionLog {
+  id               String   @id @default(cuid())
+  userId           String
+  phoneInstanceId  String
+  action           String   // TRAVAR | PAUSAR | REATIVAR
+  timestamp        DateTime @default(now())
+  actorUserId      String?
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneInstance    WhatsappPhoneInstance @relation(fields: [phoneInstanceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([phoneInstanceId, timestamp])
+  @@map("bot_action_logs")
+}
+
+model WebhookConfig {
+  id        String   @id @default(cuid())
+  userId    String
+  origin    String
+  url       String
+  headers   Json?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phoneInstances WhatsappPhoneInstance[]
+
+  @@index([userId, origin])
+  @@map("webhook_configs")
 }
 
 model Webhook {
@@ -448,6 +488,12 @@ enum CampaignStatus {
   ACTIVE
   COMPLETED
   CANCELLED
+}
+
+enum BotStatus {
+  ATIVO
+  PAUSADO
+  TRAVADO
 }
 
 enum WeekDay {

@@ -1,6 +1,8 @@
 node_modules
 .env
+.md
 dist/
 tsconfig.build.tsbuildinfo
 .env.example
 package-lock.json
+docs/bot-control-webhooks-checklist.md

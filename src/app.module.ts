@@ -18,6 +18,8 @@ import { ReportsModule } from './reports/reports.module';
 import { SellersModule } from './sellers/sellers.module';
 import { UsersModule } from './users/users.module';
 import { SellerAvailabilityModule } from './seller-availability/seller-availability.module';
+import { PhoneInstancesModule } from './phone-instances/phone-instances.module';
+import { WebhookConfigsModule } from './webhook-configs/webhook-configs.module';
 
 @Module({
   imports: [
@@ -36,7 +38,9 @@ import { SellerAvailabilityModule } from './seller-availability/seller-availabil
     FunnelEventsModule,
     IntegrationsModule,
     CommonModule,
-    SellerAvailabilityModule
+    SellerAvailabilityModule,
+    PhoneInstancesModule,
+    WebhookConfigsModule
   ],
   providers: [
     {
