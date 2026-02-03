@@ -112,12 +112,18 @@ export class EvolutionMessagesService {
       : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
     if (useProvider) {
       try {
-        const provider = await this.evolution.getConversation(`+${normalized}`, {
+        const providerInstanceId = opts?.instanceId ?? (await this.resolveProviderInstanceId(userId));
+        if (!providerInstanceId) {
+          throw new Error('Missing provider instance id');
+        }
+        const provider = await this.evolution.findMessages({
+          instanceId: providerInstanceId,
+          where: { remoteJid: `${normalized}@s.whatsapp.net` },
           limit,
-          token: token ?? undefined,
-          instanceId: opts?.instanceId
+          token: token ?? undefined
         });
-        items = Array.isArray((provider as any)?.messages) ? (provider as any).messages : (provider as any)?.data ?? [];
+        const records = (provider as any)?.messages?.records ?? (provider as any)?.records ?? [];
+        items = Array.isArray(records) ? records : [];
       } catch {
         const local = await (this.prisma as any).whatsappMessage.findMany({
           where: {
@@ -356,5 +362,14 @@ export class EvolutionMessagesService {
       return token;
     }
     return process.env.EVOLUTION_DEFAULT_TOKEN ?? null;
+  }
+
+  private async resolveProviderInstanceId(userId: string): Promise<string | null> {
+    const record = await (this.prisma as any).evolutionInstance.findFirst({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' },
+      select: { providerInstanceId: true }
+    });
+    return record?.providerInstanceId ?? null;
   }
 }
