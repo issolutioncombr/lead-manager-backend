@@ -22,4 +22,8 @@ export class EvolutionConversationQueryDto {
   @IsInt()
   @Min(1)
   limit?: number;
+
+  @IsOptional()
+  @IsIn(['provider', 'local'])
+  source?: 'provider' | 'local';
 }

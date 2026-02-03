@@ -543,7 +543,8 @@ export class EvolutionWebhookService {
           phoneRaw = recent?.phoneRaw ?? null;
         } catch {}
         if (phoneRaw) {
-          const direction = data?.fromMe ? 'OUTBOUND' : 'INBOUND';
+          const fromMeFlag = (data?.key?.fromMe ?? data?.fromMe ?? null);
+          const direction = fromMeFlag === null ? 'OUTBOUND' : (fromMeFlag ? 'OUTBOUND' : 'INBOUND');
           await (this.prisma as any).whatsappMessage.upsert({
             where: { wamid: keyId },
             create: {
@@ -552,7 +553,7 @@ export class EvolutionWebhookService {
               remoteJid: remoteJid ?? `${phoneRaw}@s.whatsapp.net`,
               remoteJidAlt: `${phoneRaw}@s.whatsapp.net`,
               phoneRaw,
-              fromMe: !!data?.fromMe,
+              fromMe: fromMeFlag === null ? true : !!fromMeFlag,
               direction,
               timestamp: new Date(),
               status: status ?? null,

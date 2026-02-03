@@ -31,7 +31,8 @@ export class EvolutionMessagesController {
       direction: query.direction,
       page: query.page,
       limit: query.limit,
-      instanceId: query.instanceId
+      instanceId: query.instanceId,
+      source: query.source
     });
   }
 

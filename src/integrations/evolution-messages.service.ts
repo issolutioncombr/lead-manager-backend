@@ -100,12 +100,16 @@ export class EvolutionMessagesService {
     }
   }
 
-  async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string }) {
+  async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string; source?: 'provider' | 'local' }) {
     const normalized = normalizePhone(phone);
     const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
     const token = await this.resolveToken(userId, opts?.instanceId);
     let items: any[] = [];
-    const useProvider = (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
+    const useProvider = opts?.source === 'provider'
+      ? true
+      : opts?.source === 'local'
+      ? false
+      : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
     if (useProvider) {
       try {
         const provider = await this.evolution.getConversation(`+${normalized}`, {
