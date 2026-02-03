@@ -220,6 +220,10 @@ export class EvolutionWebhookService {
       const direction = fromMe ? 'OUTBOUND' : 'INBOUND';
       const mediaCaption = message?.imageMessage?.caption || message?.videoMessage?.caption || message?.documentMessage?.caption || null;
       const mediaUrl = message?.imageMessage?.url || message?.videoMessage?.url || message?.documentMessage?.url || null;
+      const resolvedMessageType =
+        typeof messageType === 'string' && messageType.length > 0
+          ? messageType
+          : this.detectMessageType(message);
 
       await (this.prisma as any).whatsappMessage.upsert({
         where: { wamid },
@@ -237,7 +241,7 @@ export class EvolutionWebhookService {
           participant: key?.participant ?? null,
           timestamp: messageTimestamp ? new Date(messageTimestamp * 1000) : new Date(),
           status: data?.status ?? null,
-          messageType,
+          messageType: resolvedMessageType ?? null,
           conversation: conversationText ?? null,
           caption: mediaCaption,
           mediaUrl,
@@ -246,7 +250,7 @@ export class EvolutionWebhookService {
         update: {
           fromMe,
           direction,
-          messageType,
+          messageType: resolvedMessageType ?? null,
           conversation: conversationText ?? null,
           caption: mediaCaption,
           mediaUrl,
@@ -278,7 +282,7 @@ export class EvolutionWebhookService {
               id: wamid,
               fromMe,
               conversation: conversationText,
-              messageType,
+              messageType: resolvedMessageType ?? null,
               name: typeof pushName === 'string' ? pushName : null,
               timestamp: messageTimestamp?.toString() ?? null
             }
@@ -444,6 +448,21 @@ export class EvolutionWebhookService {
       }
     }
     return out;
+  }
+
+  private detectMessageType(msg: any): string | null {
+    if (!msg || typeof msg !== 'object') return null;
+    if (typeof msg.conversation === 'string') return 'conversation';
+    if (msg.extendedTextMessage) return 'extendedTextMessage';
+    if (msg.imageMessage) return 'imageMessage';
+    if (msg.videoMessage) return 'videoMessage';
+    if (msg.documentMessage) return 'documentMessage';
+    if (msg.audioMessage) return 'audioMessage';
+    if (msg.stickerMessage) return 'stickerMessage';
+    if (msg.buttonsResponseMessage) return 'buttonsResponseMessage';
+    if (msg.listResponseMessage) return 'listResponseMessage';
+    if (msg.reactionMessage) return 'reactionMessage';
+    return null;
   }
 
   private async postJson(url: string, body: any): Promise<{ ok: boolean; status: number }> {
