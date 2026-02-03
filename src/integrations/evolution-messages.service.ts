@@ -116,7 +116,14 @@ export class EvolutionMessagesService {
         items = Array.isArray((provider as any)?.messages) ? (provider as any).messages : (provider as any)?.data ?? [];
       } catch {
         const local = await (this.prisma as any).whatsappMessage.findMany({
-          where: { userId, phoneRaw: normalized },
+          where: {
+            userId,
+            OR: [
+              { phoneRaw: normalized },
+              { remoteJid: `${normalized}@s.whatsapp.net` },
+              { remoteJidAlt: `${normalized}@s.whatsapp.net` }
+            ]
+          },
           orderBy: { timestamp: 'asc' },
           take: limit
         });
@@ -133,7 +140,14 @@ export class EvolutionMessagesService {
       }
     } else {
       const local = await (this.prisma as any).whatsappMessage.findMany({
-        where: { userId, phoneRaw: normalized },
+        where: {
+          userId,
+          OR: [
+            { phoneRaw: normalized },
+            { remoteJid: `${normalized}@s.whatsapp.net` },
+            { remoteJidAlt: `${normalized}@s.whatsapp.net` }
+          ]
+        },
         orderBy: { timestamp: 'asc' },
         take: limit
       });
@@ -148,6 +162,8 @@ export class EvolutionMessagesService {
         pushName: m.pushName ?? null
       })) : [];
     }
+    // Dedup por wamid + timestamp
+    const seenIds = new Set<string>();
     const data = items
       .map((m: any) => {
         const key = m?.key ?? {};
@@ -157,7 +173,8 @@ export class EvolutionMessagesService {
         const mediaUrl = msg?.imageMessage?.url ?? msg?.videoMessage?.url ?? msg?.documentMessage?.url ?? null;
         const type = m?.messageType ?? (mediaUrl ? 'media' : (text ? 'text' : null));
         const ts = m?.messageTimestamp ?? m?.timestamp ?? Date.now() / 1000;
-        return {
+        const id = m?.id ?? key?.id ?? m?.wamid ?? `${normalized}-${ts}`;
+        const entry = {
           id: m?.id ?? key?.id ?? m?.wamid ?? `${normalized}-${ts}`,
           wamid: key?.id ?? m?.wamid ?? null,
           fromMe,
@@ -171,6 +188,13 @@ export class EvolutionMessagesService {
           pushName: m?.pushName ?? m?.name ?? null,
           phoneRaw: normalized
         };
+        return entry;
+      })
+      .filter((e: any) => {
+        const key = `${e.wamid ?? ''}|${e.timestamp?.toISOString?.() ?? ''}`;
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
+        return true;
       })
       .filter((entry: any) => (opts?.direction === 'inbound' ? !entry.fromMe : opts?.direction === 'outbound' ? entry.fromMe : true));
     // Provider response may not support pagination; return current slice
