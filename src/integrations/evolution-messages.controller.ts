@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, HttpStatus, Post, Query, UnauthorizedException } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { EvolutionMessagesService } from './evolution-messages.service';
 import { EvolutionSendMessageDto } from './dto/evolution-send-message.dto';
@@ -43,5 +43,20 @@ export class EvolutionMessagesController {
   ) {
     const data = await this.svc.listChats(user.userId, { instanceId: instanceId || undefined, limit: limit ? parseInt(limit, 10) || 100 : 100 });
     return { data };
+  }
+
+  @Get('public-conversation')
+  @HttpCode(HttpStatus.OK)
+  async publicConversation(
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Query('phone') phone: string,
+    @Query('limit') limit?: string
+  ) {
+    const expected = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    if (expected && tokenHeader !== expected) {
+      throw new UnauthorizedException();
+    }
+    const lim = limit ? parseInt(limit, 10) || 50 : 50;
+    return this.svc.listConversationPublic(phone, { limit: lim });
   }
 }

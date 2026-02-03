@@ -158,6 +158,50 @@ export class EvolutionMessagesService {
     return { data, total: data.length, page: 1, limit };
   }
 
+  async listConversationPublic(phone: string, opts?: { limit?: number }) {
+    const normalized = normalizePhone(phone);
+    const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
+    const local = await (this.prisma as any).whatsappMessage.findMany({
+      where: { phoneRaw: normalized },
+      orderBy: { timestamp: 'asc' },
+      take: limit
+    });
+    const items = Array.isArray(local) ? local.map((m: any) => ({
+      id: m.wamid ?? `${normalized}-${m.timestamp?.getTime?.() ?? Date.now()}`,
+      key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
+      message: m.mediaUrl
+        ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
+        : { conversation: m.conversation ?? null },
+      messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
+      messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
+      pushName: m.pushName ?? null
+    })) : [];
+    const data = items.map((m: any) => {
+      const key = m?.key ?? {};
+      const msg = m?.message ?? {};
+      const fromMe = !!key.fromMe;
+      const text = msg?.conversation ?? msg?.extendedTextMessage?.text ?? msg?.imageMessage?.caption ?? null;
+      const mediaUrl = msg?.imageMessage?.url ?? msg?.videoMessage?.url ?? msg?.documentMessage?.url ?? null;
+      const type = m?.messageType ?? (mediaUrl ? 'media' : (text ? 'text' : null));
+      const ts = m?.messageTimestamp ?? m?.timestamp ?? Date.now() / 1000;
+      return {
+        id: m?.id ?? key?.id ?? m?.wamid ?? `${normalized}-${ts}`,
+        wamid: key?.id ?? m?.wamid ?? null,
+        fromMe,
+        direction: fromMe ? 'OUTBOUND' : 'INBOUND',
+        conversation: text,
+        caption: msg?.imageMessage?.caption ?? msg?.videoMessage?.caption ?? msg?.documentMessage?.caption ?? null,
+        mediaUrl,
+        messageType: type,
+        deliveryStatus: undefined,
+        timestamp: new Date((Number(ts) || Math.floor(Date.now() / 1000)) * 1000),
+        pushName: m?.pushName ?? m?.name ?? null,
+        phoneRaw: normalized
+      };
+    });
+    return { data, total: data.length, page: 1, limit };
+  }
+
   async listChats(userId: string, opts?: { instanceId?: string; limit?: number }) {
     const token = await this.resolveToken(userId, opts?.instanceId);
     let items: any[] = [];
