@@ -8,6 +8,50 @@ export class EvolutionWebhookService {
 
   constructor(private readonly prisma: PrismaService) {}
 
+  async handleConnectionUpdate(payload: any) {
+    const instanceName = payload?.instance ?? null;
+    let userId: string | null = null;
+    let instanceId: string | null = null;
+    let providerInstanceId: string | null = null;
+    if (instanceName) {
+      const instanceRecord = await this.prisma.evolutionInstance.findFirst({
+        where: {
+          OR: [
+            { providerInstanceId: instanceName },
+            { metadata: { path: ['displayName'], equals: instanceName } },
+            { metadata: { path: ['instanceName'], equals: instanceName } }
+          ]
+        },
+        select: { userId: true, instanceId: true, providerInstanceId: true }
+      });
+      if (instanceRecord) {
+        userId = instanceRecord.userId;
+        instanceId = instanceRecord.instanceId;
+        providerInstanceId = instanceRecord.providerInstanceId;
+      }
+    }
+    if (!userId) {
+      return;
+    }
+    await (this.prisma as any).webhook.create({
+      data: {
+        userId,
+        instanceId,
+        providerInstanceId,
+        receivedAt: new Date(),
+        rawJson: this.redactSecrets(payload),
+        jsonrow: {
+          eventType: payload?.event ?? 'connection.update',
+          state: payload?.data?.state ?? null,
+          statusReason: payload?.data?.statusReason ?? null,
+          wuid: payload?.data?.wuid ?? null,
+          instance: instanceName ?? null,
+          serverUrl: payload?.server_url ?? null
+        }
+      }
+    });
+  }
+
   async handleWebhook(payload: any) {
     // 1. Validar se é um evento de mensagem
     const eventRaw = (payload?.event ?? payload?.eventType ?? '').toString();

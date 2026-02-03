@@ -14,9 +14,12 @@ export class EvolutionWebhookController {
     @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
     @Body() payload: any
   ) {
-    const expected = process.env.EVOLUTION_WEBHOOK_TOKEN;
-    if (expected && tokenHeader !== expected) {
-      throw new UnauthorizedException('Invalid webhook token');
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
     }
     // Processa assincronamente para não travar a Evolution
     // Em produção, idealmente usaria uma fila (BullMQ)
@@ -24,6 +27,25 @@ export class EvolutionWebhookController {
       console.error('Erro no processamento do webhook em background:', err);
     });
 
+    return { status: 'received' };
+  }
+
+  @Public()
+  @Post('connection-update')
+  @HttpCode(HttpStatus.OK)
+  async handleConnectionUpdate(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+    this.webhookService.handleConnectionUpdate(payload).catch(() => {});
     return { status: 'received' };
   }
 }

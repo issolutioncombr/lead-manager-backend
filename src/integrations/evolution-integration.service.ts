@@ -866,6 +866,10 @@ export class EvolutionIntegrationService {
     if (webhookAuthorization && webhookAuthorization.length > 0) {
       headers.authorization = webhookAuthorization;
     }
+    const webhookToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    if (webhookToken && webhookToken.length > 0) {
+      headers['x-evolution-webhook-token'] = webhookToken;
+    }
 
     headers['Content-Type'] = process.env.EVOLUTION_WEBHOOK_CONTENT_TYPE ?? 'application/json';
 
