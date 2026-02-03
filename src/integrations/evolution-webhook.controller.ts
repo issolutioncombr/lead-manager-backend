@@ -143,4 +143,23 @@ export class EvolutionWebhookController {
     this.webhookService.handleChatsUpsert(payload).catch(() => {});
     return { status: 'received' };
   }
+
+  @Public()
+  @Post(':event')
+  @HttpCode(HttpStatus.OK)
+  async handleGenericEvent(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+    await this.webhookService.dispatchByEvent(payload).catch(() => {});
+    return { status: 'received' };
+  }
 }

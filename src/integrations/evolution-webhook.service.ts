@@ -652,4 +652,61 @@ export class EvolutionWebhookService {
       }
     });
   }
+
+  async dispatchByEvent(payload: any) {
+    const raw = (payload?.event ?? '').toString();
+    const normalized = raw.toLowerCase().replace(/_/g, '.').replace(/-/g, '.');
+    if (normalized === 'messages.upsert') {
+      return this.handleWebhook(payload);
+    }
+    if (normalized === 'connection.update') {
+      return this.handleConnectionUpdate(payload);
+    }
+    if (normalized === 'messages.update') {
+      return this.handleMessagesUpdate(payload);
+    }
+    if (normalized === 'contacts.update' || normalized === 'contacts.upsert' || normalized === 'contacts.set') {
+      return this.handleContactsUpdate(payload);
+    }
+    if (normalized === 'chats.update' || normalized === 'chats.upsert' || normalized === 'chats.set' || normalized === 'chats.delete') {
+      return this.handleChatsUpdate(payload);
+    }
+    const instanceName = payload?.instance ?? null;
+    let userId: string | null = null;
+    let instanceId: string | null = null;
+    let providerInstanceId: string | null = null;
+    if (instanceName) {
+      const instanceRecord = await this.prisma.evolutionInstance.findFirst({
+        where: {
+          OR: [
+            { providerInstanceId: instanceName },
+            { metadata: { path: ['displayName'], equals: instanceName } },
+            { metadata: { path: ['instanceName'], equals: instanceName } }
+          ]
+        },
+        select: { userId: true, instanceId: true, providerInstanceId: true }
+      });
+      if (instanceRecord) {
+        userId = instanceRecord.userId;
+        instanceId = instanceRecord.instanceId;
+        providerInstanceId = instanceRecord.providerInstanceId;
+      }
+    }
+    if (userId) {
+      await (this.prisma as any).webhook.create({
+        data: {
+          userId,
+          instanceId,
+          providerInstanceId,
+          receivedAt: new Date(),
+          rawJson: this.redactSecrets(payload),
+          jsonrow: {
+            eventType: raw || 'unknown',
+            info: payload?.data ?? null
+          }
+        }
+      });
+    }
+    return;
+  }
 }
