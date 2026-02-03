@@ -112,12 +112,12 @@ export class EvolutionMessagesService {
       : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
     if (useProvider) {
       try {
-        const providerInstanceId = opts?.instanceId ?? (await this.resolveProviderInstanceId(userId));
-        if (!providerInstanceId) {
+        const instanceAlias = opts?.instanceId ?? (await this.resolveInstanceAlias(userId));
+        if (!instanceAlias) {
           throw new Error('Missing provider instance id');
         }
         const provider = await this.evolution.findMessages({
-          instanceId: providerInstanceId,
+          instanceId: instanceAlias,
           where: { remoteJid: `${normalized}@s.whatsapp.net` },
           limit,
           token: token ?? undefined
@@ -265,7 +265,8 @@ export class EvolutionMessagesService {
       : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
     if (useProvider) {
       try {
-        const provider = await this.evolution.listChats({ instanceId: opts?.instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
+        const instanceAlias = opts?.instanceId ?? (await this.resolveInstanceAlias(userId)) ?? undefined;
+        const provider = await this.evolution.listChats({ instanceId: instanceAlias, limit: opts?.limit ?? 100, token: token ?? undefined });
         items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
       } catch {
         const recent = await (this.prisma as any).whatsappMessage.findMany({
@@ -371,5 +372,14 @@ export class EvolutionMessagesService {
       select: { providerInstanceId: true }
     });
     return record?.providerInstanceId ?? null;
+  }
+
+  private async resolveInstanceAlias(userId: string): Promise<string | null> {
+    const record = await (this.prisma as any).evolutionInstance.findFirst({
+      where: { userId },
+      orderBy: { updatedAt: 'desc' },
+      select: { instanceId: true }
+    });
+    return record?.instanceId ?? null;
   }
 }

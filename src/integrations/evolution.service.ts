@@ -370,9 +370,32 @@ export class EvolutionService {
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      this.logger.error(
-        `Erro na Evolution API [${response.status}] ${url}: ${JSON.stringify(payload)}`
-      );
+      if (response.status === 404) {
+        let instanceName = '';
+        let remoteJid = '';
+        try {
+          const match = path.match(/\/chat\/findMessages\/(.+?)(?:$|\?|\/)/);
+          if (match) instanceName = match[1];
+          if (init.body) {
+            const bodyObj = JSON.parse(init.body);
+            remoteJid = bodyObj?.where?.remoteJid ?? '';
+          }
+        } catch (e) { void e; }
+        const key = `404:${instanceName}:${remoteJid}`;
+        const now = Date.now();
+        const last = (this as any)._last404Log?.get?.(key) ?? 0;
+        if (!(this as any)._last404Log) (this as any)._last404Log = new Map<string, number>();
+        if (now - last >= 60_000) {
+          (this as any)._last404Log.set(key, now);
+          this.logger.error(
+            `Erro 404 na Evolution API ${url} ${remoteJid ? `remoteJid=${remoteJid}` : ''}`
+          );
+        }
+      } else {
+        this.logger.error(
+          `Erro na Evolution API [${response.status}] ${url}: ${JSON.stringify(payload)}`
+        );
+      }
       throw new HttpException(
         payload?.message ?? 'Erro ao comunicar com a Evolution API.',
         response.status ?? HttpStatus.INTERNAL_SERVER_ERROR
