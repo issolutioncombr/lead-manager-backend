@@ -183,9 +183,12 @@ export class EvolutionMessagesService {
     });
     const meta = record?.metadata;
     if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
-      return null;
+      return process.env.EVOLUTION_DEFAULT_TOKEN ?? null;
     }
     const token = (meta as any).token;
-    return typeof token === 'string' && token.length > 0 ? token : null;
+    if (typeof token === 'string' && token.length > 0) {
+      return token;
+    }
+    return process.env.EVOLUTION_DEFAULT_TOKEN ?? null;
   }
 }

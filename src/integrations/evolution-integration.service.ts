@@ -108,7 +108,8 @@ export class EvolutionIntegrationService {
       lastStatusAt: new Date().toISOString(),
       providerId: providerInstanceId,
       webhookUrl: resolvedWebhookUrl,
-      number: number ?? null
+      number: number ?? null,
+      token: created.token ?? null
     };
 
     await this.evolutionModel().create({
