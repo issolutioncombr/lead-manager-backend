@@ -530,6 +530,42 @@ export class LeadsService {
     ]);
     return { data, total, page, limit };
   }
+
+  async getLastMessagesForLeads(userId: string, leadIds: string[]) {
+    if (leadIds.length === 0) return {};
+    const msgsByLead = await (this.prisma as any).whatsappMessage.findMany({
+      where: {
+        userId,
+        OR: [{ leadId: { in: leadIds } }, { externalId: { in: leadIds } }]
+      },
+      orderBy: { timestamp: 'desc' },
+      select: {
+        leadId: true,
+        externalId: true,
+        conversation: true,
+        fromMe: true,
+        messageType: true,
+        timestamp: true
+      }
+    });
+    const latest: Record<
+      string,
+      { text?: string | null; fromMe: boolean; messageType?: string | null; timestamp: string }
+    > = {};
+    for (const m of msgsByLead) {
+      const key = m.leadId ?? m.externalId;
+      if (!key) continue;
+      if (!latest[key]) {
+        latest[key] = {
+          text: m.conversation,
+          fromMe: !!m.fromMe,
+          messageType: m.messageType ?? null,
+          timestamp: m.timestamp.toISOString()
+        };
+      }
+    }
+    return latest;
+  }
   async getMetaCapiEvents(userId: string) {
     // Cast para any para evitar erro de tipo temporário do Prisma
     const events = await (this.prisma as any).whatsappMessage.findMany({

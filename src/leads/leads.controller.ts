@@ -18,8 +18,20 @@ export class LeadsController {
   constructor(private readonly leadsService: LeadsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthenticatedUser, @Query() query: LeadsQueryDto): Promise<PaginatedLeads> {
-    return this.leadsService.list(user.userId, query);
+  async list(@CurrentUser() user: AuthenticatedUser, @Query() query: LeadsQueryDto): Promise<any> {
+    const result = await this.leadsService.list(user.userId, query);
+    if (query.includeLastMessage) {
+      const ids = result.data.map((l) => l.id);
+      const latest = await this.leadsService.getLastMessagesForLeads(user.userId, ids);
+      return {
+        ...result,
+        data: result.data.map((l) => ({
+          ...l,
+          lastMessage: latest[l.id] ?? null
+        }))
+      };
+    }
+    return result;
   }
 
   @Get('export/events/meta-capi')
