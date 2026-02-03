@@ -6,6 +6,10 @@ export class EvolutionConversationQueryDto {
   phone!: string;
 
   @IsOptional()
+  @IsString()
+  instanceId?: string;
+
+  @IsOptional()
   @IsIn(['inbound', 'outbound'])
   direction?: 'inbound' | 'outbound';
 

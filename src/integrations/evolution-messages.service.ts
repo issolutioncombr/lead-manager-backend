@@ -100,11 +100,15 @@ export class EvolutionMessagesService {
     }
   }
 
-  async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number }) {
+  async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string }) {
     const normalized = normalizePhone(phone);
     const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
-    const token = await this.resolveToken(userId);
-    const provider = await this.evolution.getConversation(`+${normalized}`, { limit, token: token ?? undefined });
+    const token = await this.resolveToken(userId, opts?.instanceId);
+    const provider = await this.evolution.getConversation(`+${normalized}`, {
+      limit,
+      token: token ?? undefined,
+      instanceId: opts?.instanceId
+    });
     const items = Array.isArray((provider as any)?.messages) ? (provider as any).messages : (provider as any)?.data ?? [];
     const data = items
       .map((m: any) => {

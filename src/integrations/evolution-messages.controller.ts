@@ -30,7 +30,8 @@ export class EvolutionMessagesController {
     return this.svc.listConversation(user.userId, query.phone, {
       direction: query.direction,
       page: query.page,
-      limit: query.limit
+      limit: query.limit,
+      instanceId: query.instanceId
     });
   }
 

@@ -244,7 +244,7 @@ export class EvolutionService {
     );
   }
 
-  async getConversation(number: string, opts?: { limit?: number; cursor?: string; token?: string }) {
+  async getConversation(number: string, opts?: { limit?: number; cursor?: string; token?: string; instanceId?: string }) {
     const path = await this.getConversationPath(number, opts);
     return this.request<any>(path, { method: 'GET' });
   }
@@ -271,9 +271,9 @@ export class EvolutionService {
     return this.appendQuery('/messages/chats', opts);
   }
 
-  private async getConversationPath(number: string, opts?: { limit?: number; cursor?: string; token?: string }): Promise<string> {
+  private async getConversationPath(number: string, opts?: { limit?: number; cursor?: string; token?: string; instanceId?: string }): Promise<string> {
     if (this.discoveredPaths?.conversation) {
-      return this.appendQuery(this.discoveredPaths.conversation, { number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token });
+      return this.appendQuery(this.discoveredPaths.conversation, { number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
     }
     const q = `number=${encodeURIComponent(number)}`;
     const candidates = [
@@ -283,7 +283,7 @@ export class EvolutionService {
       `/messages/history?${q}`
     ];
     for (const base of candidates) {
-      const tryPath = this.appendQuery(base, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token });
+      const tryPath = this.appendQuery(base, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
       const ok = await this.probe(tryPath);
       if (ok) {
         const baseWithQ = base.includes('?') ? base.split('?')[0] + '?' : base + '?';
@@ -293,7 +293,7 @@ export class EvolutionService {
     }
     const fallback = `/messages/conversation?${q}`;
     this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: '/messages/conversation?' };
-    return this.appendQuery(fallback, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token });
+    return this.appendQuery(fallback, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
   }
 
   private appendQuery(path: string, params?: Record<string, any> | undefined): string {
