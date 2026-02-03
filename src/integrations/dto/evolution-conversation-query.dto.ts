@@ -1,4 +1,5 @@
-import { IsOptional, IsString, Matches, IsIn, IsInt, Min } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsOptional, IsString, Matches, IsIn, IsInt, Max, Min } from 'class-validator';
 
 export class EvolutionConversationQueryDto {
   @IsString()
@@ -14,13 +15,16 @@ export class EvolutionConversationQueryDto {
   direction?: 'inbound' | 'outbound';
 
   @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
   @IsInt()
   @Min(1)
   page?: number;
 
   @IsOptional()
+  @Transform(({ value }) => parseInt(value, 10))
   @IsInt()
   @Min(1)
+  @Max(200)
   limit?: number;
 
   @IsOptional()

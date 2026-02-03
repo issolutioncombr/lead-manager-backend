@@ -541,7 +541,9 @@ export class EvolutionWebhookService {
             select: { phoneRaw: true }
           });
           phoneRaw = recent?.phoneRaw ?? null;
-        } catch {}
+        } catch {
+          phoneRaw = null;
+        }
         if (phoneRaw) {
           const fromMeFlag = (data?.key?.fromMe ?? data?.fromMe ?? null);
           const direction = fromMeFlag === null ? 'OUTBOUND' : (fromMeFlag ? 'OUTBOUND' : 'INBOUND');

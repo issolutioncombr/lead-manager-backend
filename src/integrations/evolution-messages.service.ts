@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvolutionService } from './evolution.service';
@@ -10,6 +10,7 @@ function normalizePhone(phone: string): string {
 
 @Injectable()
 export class EvolutionMessagesService {
+  private readonly logger = new Logger(EvolutionMessagesService.name);
   private readonly buckets = new Map<string, { count: number; resetAt: number }>();
   constructor(private readonly prisma: PrismaService, private readonly evolution: EvolutionService) {}
 
@@ -102,8 +103,10 @@ export class EvolutionMessagesService {
 
   async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string; source?: 'provider' | 'local' }) {
     const normalized = normalizePhone(phone);
+    if (!normalized || normalized.length < 7) {
+      throw new BadRequestException('Telefone inválido');
+    }
     const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
-    const token = await this.resolveToken(userId, opts?.instanceId);
     let items: any[] = [];
     const useProvider = opts?.source === 'provider'
       ? true
@@ -111,66 +114,34 @@ export class EvolutionMessagesService {
       ? false
       : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
     if (useProvider) {
-      try {
-        const instanceAlias = opts?.instanceId ?? (await this.resolveInstanceAlias(userId));
-        if (!instanceAlias) {
-          throw new Error('Missing provider instance id');
+      let lastError: unknown = null;
+      const instanceCandidates = await this.resolveInstanceCandidates(userId, opts?.instanceId);
+      for (const instanceId of instanceCandidates) {
+        try {
+          const token = await this.resolveToken(userId, instanceId);
+          const provider = await this.evolution.findMessages({
+            instanceId,
+            where: { remoteJid: `${normalized}@s.whatsapp.net` },
+            limit,
+            token: token ?? undefined
+          });
+          const records = (provider as any)?.messages?.records ?? (provider as any)?.records ?? [];
+          items = Array.isArray(records) ? records : [];
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
         }
-        const provider = await this.evolution.findMessages({
-          instanceId: instanceAlias,
-          where: { remoteJid: `${normalized}@s.whatsapp.net` },
-          limit,
-          token: token ?? undefined
-        });
-        const records = (provider as any)?.messages?.records ?? (provider as any)?.records ?? [];
-        items = Array.isArray(records) ? records : [];
-      } catch {
-        const local = await (this.prisma as any).whatsappMessage.findMany({
-          where: {
-            userId,
-            OR: [
-              { phoneRaw: normalized },
-              { remoteJid: `${normalized}@s.whatsapp.net` },
-              { remoteJidAlt: `${normalized}@s.whatsapp.net` }
-            ]
-          },
-          orderBy: { timestamp: 'asc' },
-          take: limit
-        });
-        items = Array.isArray(local) ? local.map((m: any) => ({
-          id: m.wamid ?? `${normalized}-${m.timestamp?.getTime?.() ?? Date.now()}`,
-          key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
-          message: m.mediaUrl
-            ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
-            : { conversation: m.conversation ?? null },
-          messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
-          messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
-          pushName: m.pushName ?? null
-        })) : [];
+      }
+      if (lastError) {
+        const status = lastError instanceof HttpException ? lastError.getStatus() : null;
+        this.logger.warn(
+          `Falha ao ler conversa no provider; usando fallback local. phone=${normalized} instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'}`
+        );
+        items = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
       }
     } else {
-      const local = await (this.prisma as any).whatsappMessage.findMany({
-        where: {
-          userId,
-          OR: [
-            { phoneRaw: normalized },
-            { remoteJid: `${normalized}@s.whatsapp.net` },
-            { remoteJidAlt: `${normalized}@s.whatsapp.net` }
-          ]
-        },
-        orderBy: { timestamp: 'asc' },
-        take: limit
-      });
-      items = Array.isArray(local) ? local.map((m: any) => ({
-        id: m.wamid ?? `${normalized}-${m.timestamp?.getTime?.() ?? Date.now()}`,
-        key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
-        message: m.mediaUrl
-          ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
-          : { conversation: m.conversation ?? null },
-        messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
-        messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
-        pushName: m.pushName ?? null
-      })) : [];
+      items = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
     }
     // Dedup por wamid + timestamp
     const seenIds = new Set<string>();
@@ -207,6 +178,11 @@ export class EvolutionMessagesService {
         return true;
       })
       .filter((entry: any) => (opts?.direction === 'inbound' ? !entry.fromMe : opts?.direction === 'outbound' ? entry.fromMe : true));
+    data.sort((a: any, b: any) => {
+      const ta = a?.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a?.timestamp).getTime();
+      const tb = b?.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b?.timestamp).getTime();
+      return ta - tb;
+    });
     // Provider response may not support pagination; return current slice
     return { data, total: data.length, page: 1, limit };
   }
@@ -216,9 +192,10 @@ export class EvolutionMessagesService {
     const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
     const local = await (this.prisma as any).whatsappMessage.findMany({
       where: { phoneRaw: normalized },
-      orderBy: { timestamp: 'asc' },
+      orderBy: { timestamp: 'desc' },
       take: limit
     });
+    local.reverse();
     const items = Array.isArray(local) ? local.map((m: any) => ({
       id: m.wamid ?? `${normalized}-${m.timestamp?.getTime?.() ?? Date.now()}`,
       key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
@@ -256,7 +233,6 @@ export class EvolutionMessagesService {
   }
 
   async listChats(userId: string, opts?: { instanceId?: string; limit?: number; source?: 'provider' | 'local' }) {
-    const token = await this.resolveToken(userId, opts?.instanceId);
     let items: any[] = [];
     const useProvider = opts?.source === 'provider'
       ? true
@@ -264,57 +240,28 @@ export class EvolutionMessagesService {
       ? false
       : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
     if (useProvider) {
-      try {
-        const instanceAlias = opts?.instanceId ?? (await this.resolveInstanceAlias(userId)) ?? undefined;
-        const provider = await this.evolution.listChats({ instanceId: instanceAlias, limit: opts?.limit ?? 100, token: token ?? undefined });
-        items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
-      } catch {
-        const recent = await (this.prisma as any).whatsappMessage.findMany({
-          where: { userId },
-          orderBy: { timestamp: 'desc' },
-          take: Math.max(10, Math.min(500, opts?.limit ?? 100))
-        });
-        const seen = new Set<string>();
-        items = [];
-        for (const m of recent) {
-          const phone = (m.phoneRaw ?? '').replace(/\D+/g, '');
-          if (!phone || seen.has(phone)) continue;
-          seen.add(phone);
-          items.push({
-            id: m.wamid ?? phone,
-            remoteJid: `${phone}@s.whatsapp.net`,
-            pushName: m.pushName ?? null,
-            lastMessage: {
-              message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
-              messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
-              key: { fromMe: !!m.fromMe }
-            }
-          });
+      let lastError: unknown = null;
+      const instanceCandidates = await this.resolveInstanceCandidates(userId, opts?.instanceId);
+      for (const instanceId of instanceCandidates) {
+        try {
+          const token = await this.resolveToken(userId, instanceId);
+          const provider = await this.evolution.listChats({ instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
+          items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
         }
       }
-    } else {
-      const recent = await (this.prisma as any).whatsappMessage.findMany({
-        where: { userId },
-        orderBy: { timestamp: 'desc' },
-        take: Math.max(10, Math.min(500, opts?.limit ?? 100))
-      });
-      const seen = new Set<string>();
-      items = [];
-      for (const m of recent) {
-        const phone = (m.phoneRaw ?? '').replace(/\D+/g, '');
-        if (!phone || seen.has(phone)) continue;
-        seen.add(phone);
-        items.push({
-          id: m.wamid ?? phone,
-          remoteJid: `${phone}@s.whatsapp.net`,
-          pushName: m.pushName ?? null,
-          lastMessage: {
-            message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
-            messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
-            key: { fromMe: !!m.fromMe }
-          }
-        });
+      if (lastError) {
+        const status = lastError instanceof HttpException ? lastError.getStatus() : null;
+        this.logger.warn(
+          `Falha ao listar chats no provider; usando fallback local. instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'}`
+        );
+        items = await this.readLocalChatsAsProviderItems(userId, opts?.limit ?? 100);
       }
+    } else {
+      items = await this.readLocalChatsAsProviderItems(userId, opts?.limit ?? 100);
     }
     const data = items
       .map((c: any) => {
@@ -349,7 +296,9 @@ export class EvolutionMessagesService {
   }
 
   private async resolveToken(userId: string, instanceId?: string | null): Promise<string | null> {
-    const where: any = instanceId ? { userId, instanceId } : { userId };
+    const where: any = instanceId
+      ? { userId, OR: [{ instanceId }, { providerInstanceId: instanceId }] }
+      : { userId };
     const record = await (this.prisma as any).evolutionInstance.findFirst({
       where,
       orderBy: { updatedAt: 'desc' }
@@ -365,21 +314,94 @@ export class EvolutionMessagesService {
     return process.env.EVOLUTION_DEFAULT_TOKEN ?? null;
   }
 
-  private async resolveProviderInstanceId(userId: string): Promise<string | null> {
-    const record = await (this.prisma as any).evolutionInstance.findFirst({
-      where: { userId },
-      orderBy: { updatedAt: 'desc' },
-      select: { providerInstanceId: true }
-    });
-    return record?.providerInstanceId ?? null;
+  private uniqueStrings(values: Array<string | null | undefined>): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const v of values) {
+      if (!v) continue;
+      const s = String(v).trim();
+      if (!s || seen.has(s)) continue;
+      seen.add(s);
+      out.push(s);
+    }
+    return out;
   }
 
-  private async resolveInstanceAlias(userId: string): Promise<string | null> {
+  private async resolveInstanceCandidates(userId: string, requestedInstanceId?: string): Promise<string[]> {
+    const requested = (requestedInstanceId ?? '').trim();
+    if (requested) {
+      const record = await (this.prisma as any).evolutionInstance.findFirst({
+        where: {
+          userId,
+          OR: [{ instanceId: requested }, { providerInstanceId: requested }]
+        },
+        select: { instanceId: true, providerInstanceId: true }
+      });
+      return this.uniqueStrings([requested, record?.instanceId, record?.providerInstanceId]);
+    }
     const record = await (this.prisma as any).evolutionInstance.findFirst({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
-      select: { instanceId: true }
+      select: { instanceId: true, providerInstanceId: true }
     });
-    return record?.instanceId ?? null;
+    return this.uniqueStrings([record?.instanceId, record?.providerInstanceId]);
+  }
+
+  private async readLocalConversationAsProviderItems(userId: string, normalizedPhone: string, limit: number): Promise<any[]> {
+    const local = await (this.prisma as any).whatsappMessage.findMany({
+      where: {
+        userId,
+        OR: [
+          { phoneRaw: normalizedPhone },
+          { remoteJid: `${normalizedPhone}@s.whatsapp.net` },
+          { remoteJidAlt: `${normalizedPhone}@s.whatsapp.net` }
+        ]
+      },
+      orderBy: { timestamp: 'desc' },
+      take: limit
+    });
+    local.reverse();
+    return Array.isArray(local)
+      ? local.map((m: any) => ({
+          id: m.wamid ?? `${normalizedPhone}-${m.timestamp?.getTime?.() ?? Date.now()}`,
+          key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
+          message: m.mediaUrl
+            ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
+            : { conversation: m.conversation ?? null },
+          messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
+          messageTimestamp: Math.floor(
+            (m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000
+          ),
+          pushName: m.pushName ?? null
+        }))
+      : [];
+  }
+
+  private async readLocalChatsAsProviderItems(userId: string, limit: number): Promise<any[]> {
+    const recent = await (this.prisma as any).whatsappMessage.findMany({
+      where: { userId },
+      orderBy: { timestamp: 'desc' },
+      take: Math.max(10, Math.min(500, limit))
+    });
+    const seen = new Set<string>();
+    const items: any[] = [];
+    for (const m of recent) {
+      const phone = (m.phoneRaw ?? '').replace(/\D+/g, '');
+      if (!phone || seen.has(phone)) continue;
+      seen.add(phone);
+      items.push({
+        id: m.wamid ?? phone,
+        remoteJid: `${phone}@s.whatsapp.net`,
+        pushName: m.pushName ?? null,
+        lastMessage: {
+          message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
+          messageTimestamp: Math.floor(
+            (m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000
+          ),
+          key: { fromMe: !!m.fromMe }
+        }
+      });
+    }
+    return items;
   }
 }

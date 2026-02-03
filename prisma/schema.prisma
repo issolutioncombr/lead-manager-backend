@@ -635,6 +635,7 @@ model WhatsappMessage {
   lead Lead? @relation(fields: [leadId], references: [id], onDelete: SetNull)
 
   @@index([userId])
+  @@index([userId, phoneRaw])
   @@index([remoteJid])
   @@index([timestamp])
   @@index([createdAt])
