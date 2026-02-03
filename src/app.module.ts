@@ -20,6 +20,7 @@ import { UsersModule } from './users/users.module';
 import { SellerAvailabilityModule } from './seller-availability/seller-availability.module';
 import { PhoneInstancesModule } from './phone-instances/phone-instances.module';
 import { WebhookConfigsModule } from './webhook-configs/webhook-configs.module';
+import { BotButtonsModule } from './bot-buttons/bot-buttons.module';
 
 @Module({
   imports: [
@@ -41,6 +42,8 @@ import { WebhookConfigsModule } from './webhook-configs/webhook-configs.module';
     SellerAvailabilityModule,
     PhoneInstancesModule,
     WebhookConfigsModule
+    ,
+    BotButtonsModule
   ],
   providers: [
     {
