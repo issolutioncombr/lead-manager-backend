@@ -54,6 +54,7 @@ export class EvolutionService {
   private readonly defaultTemplate?: string;
   private readonly defaultChannel?: string;
   private readonly defaultToken?: string;
+  private discoveredPaths?: { chats?: string; conversation?: string };
 
   constructor(private readonly configService: ConfigService) {
     const url = this.configService.get<string>('EVOLUTION_API_URL');
@@ -244,19 +245,84 @@ export class EvolutionService {
   }
 
   async getConversation(number: string, opts?: { limit?: number; cursor?: string }) {
-    const query: string[] = [`number=${encodeURIComponent(number)}`];
-    if (opts?.limit) query.push(`limit=${opts.limit}`);
-    if (opts?.cursor) query.push(`cursor=${encodeURIComponent(opts.cursor)}`);
-    return this.request<any>(`/messages/conversation?${query.join('&')}`, { method: 'GET' });
+    const path = await this.getConversationPath(number, opts);
+    return this.request<any>(path, { method: 'GET' });
   }
 
   async listChats(opts?: { instanceId?: string; limit?: number; cursor?: string }) {
-    const query: string[] = [];
-    if (opts?.instanceId) query.push(`instanceId=${encodeURIComponent(opts.instanceId)}`);
-    if (opts?.limit) query.push(`limit=${opts.limit}`);
-    if (opts?.cursor) query.push(`cursor=${encodeURIComponent(opts.cursor)}`);
-    const path = query.length ? `/messages/chats?${query.join('&')}` : '/messages/chats';
+    const path = await this.getChatsPath(opts);
     return this.request<any>(path, { method: 'GET' });
+  }
+
+  private async getChatsPath(opts?: { instanceId?: string; limit?: number; cursor?: string }): Promise<string> {
+    if (this.discoveredPaths?.chats) {
+      return this.appendQuery(this.discoveredPaths.chats, opts);
+    }
+    const candidates = ['/messages/chats', '/chats', '/chat/list', '/messages/contacts', '/contacts'];
+    for (const base of candidates) {
+      const tryPath = this.appendQuery(base, { limit: opts?.limit ?? 100, instanceId: opts?.instanceId });
+      const ok = await this.probe(tryPath);
+      if (ok) {
+        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: base };
+        return tryPath;
+      }
+    }
+    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: '/messages/chats' };
+    return this.appendQuery('/messages/chats', opts);
+  }
+
+  private async getConversationPath(number: string, opts?: { limit?: number; cursor?: string }): Promise<string> {
+    if (this.discoveredPaths?.conversation) {
+      return this.appendQuery(this.discoveredPaths.conversation, { number, limit: opts?.limit, cursor: opts?.cursor });
+    }
+    const q = `number=${encodeURIComponent(number)}`;
+    const candidates = [
+      `/messages/conversation?${q}`,
+      `/chat/conversation?${q}`,
+      `/conversation?${q}`,
+      `/messages/history?${q}`
+    ];
+    for (const base of candidates) {
+      const tryPath = this.appendQuery(base, { limit: opts?.limit, cursor: opts?.cursor });
+      const ok = await this.probe(tryPath);
+      if (ok) {
+        const baseWithQ = base.includes('?') ? base.split('?')[0] + '?' : base + '?';
+        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: baseWithQ };
+        return tryPath;
+      }
+    }
+    const fallback = `/messages/conversation?${q}`;
+    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: '/messages/conversation?' };
+    return this.appendQuery(fallback, { limit: opts?.limit, cursor: opts?.cursor });
+  }
+
+  private appendQuery(path: string, params?: Record<string, any> | undefined): string {
+    if (!params || !Object.keys(params).length) return path;
+    const hasQuery = path.includes('?');
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined || v === null || v === '') continue;
+      qs.append(k, String(v));
+    }
+    const sep = hasQuery ? '&' : '?';
+    return `${path}${sep}${qs.toString()}`;
+  }
+
+  private async probe(path: string): Promise<boolean> {
+    try {
+      const url = `${this.baseUrl}${path}`;
+      const resp = await fetch(url, { method: 'GET', headers: { apikey: this.apiKey } });
+      if (!resp.ok) return false;
+      const payload = await resp.json().catch(() => ({}));
+      if (Array.isArray(payload)) return true;
+      if (Array.isArray((payload as any)?.data)) return true;
+      if (Array.isArray((payload as any)?.messages)) return true;
+      if (Array.isArray((payload as any)?.chats)) return true;
+      if (Array.isArray((payload as any)?.contacts)) return true;
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async request<T = unknown>(
