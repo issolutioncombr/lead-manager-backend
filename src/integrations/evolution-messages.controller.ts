@@ -40,9 +40,10 @@ export class EvolutionMessagesController {
   async chats(
     @CurrentUser() user: AuthenticatedUser,
     @Query('instanceId') instanceId?: string,
-    @Query('limit') limit?: string
+    @Query('limit') limit?: string,
+    @Query('source') source?: 'provider' | 'local'
   ) {
-    const data = await this.svc.listChats(user.userId, { instanceId: instanceId || undefined, limit: limit ? parseInt(limit, 10) || 100 : 100 });
+    const data = await this.svc.listChats(user.userId, { instanceId: instanceId || undefined, limit: limit ? parseInt(limit, 10) || 100 : 100, source });
     return { data };
   }
 

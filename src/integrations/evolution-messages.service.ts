@@ -249,10 +249,14 @@ export class EvolutionMessagesService {
     return { data, total: data.length, page: 1, limit };
   }
 
-  async listChats(userId: string, opts?: { instanceId?: string; limit?: number }) {
+  async listChats(userId: string, opts?: { instanceId?: string; limit?: number; source?: 'provider' | 'local' }) {
     const token = await this.resolveToken(userId, opts?.instanceId);
     let items: any[] = [];
-    const useProvider = (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
+    const useProvider = opts?.source === 'provider'
+      ? true
+      : opts?.source === 'local'
+      ? false
+      : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
     if (useProvider) {
       try {
         const provider = await this.evolution.listChats({ instanceId: opts?.instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });

@@ -280,13 +280,24 @@ export class EvolutionService {
       `/conversation`,
       `/messages/history`
     ];
+    const paramKeys = ['number', 'phone', 'jid', 'remoteJid'];
     for (const base of candidates) {
-      const tryPath = this.appendQuery(base, { number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
-      const ok = await this.probe(tryPath);
-      if (ok) {
-        const baseWithoutQuery = base.split('?')[0];
-        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: baseWithoutQuery };
-        return tryPath;
+      for (const p of paramKeys) {
+        const tryPath = this.appendQuery(base, { [p]: number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
+        const ok = await this.probe(tryPath);
+        if (ok) {
+          const baseWithoutQuery = base.split('?')[0];
+          this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: baseWithoutQuery };
+          return tryPath;
+        }
+      }
+      // Try as path segment
+      const segPath = `${base}/${encodeURIComponent(number)}`;
+      const segTry = this.appendQuery(segPath, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token, instanceId: opts?.instanceId });
+      const okSeg = await this.probe(segTry);
+      if (okSeg) {
+        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: base };
+        return segTry;
       }
     }
     const fallbackBase = `/messages/conversation`;
