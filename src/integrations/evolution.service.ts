@@ -243,6 +243,22 @@ export class EvolutionService {
     );
   }
 
+  async getConversation(number: string, opts?: { limit?: number; cursor?: string }) {
+    const query: string[] = [`number=${encodeURIComponent(number)}`];
+    if (opts?.limit) query.push(`limit=${opts.limit}`);
+    if (opts?.cursor) query.push(`cursor=${encodeURIComponent(opts.cursor)}`);
+    return this.request<any>(`/messages/conversation?${query.join('&')}`, { method: 'GET' });
+  }
+
+  async listChats(opts?: { instanceId?: string; limit?: number; cursor?: string }) {
+    const query: string[] = [];
+    if (opts?.instanceId) query.push(`instanceId=${encodeURIComponent(opts.instanceId)}`);
+    if (opts?.limit) query.push(`limit=${opts.limit}`);
+    if (opts?.cursor) query.push(`cursor=${encodeURIComponent(opts.cursor)}`);
+    const path = query.length ? `/messages/chats?${query.join('&')}` : '/messages/chats';
+    return this.request<any>(path, { method: 'GET' });
+  }
+
   private async request<T = unknown>(
     path: string,
     init: RequestInit & { body?: string } = {}

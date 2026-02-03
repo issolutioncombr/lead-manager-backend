@@ -102,39 +102,57 @@ export class EvolutionMessagesService {
 
   async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number }) {
     const normalized = normalizePhone(phone);
-    const page = Math.max(1, opts?.page ?? 1);
     const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
-    const skip = (page - 1) * limit;
+    const provider = await this.evolution.getConversation(`+${normalized}`, { limit });
+    const items = Array.isArray((provider as any)?.messages) ? (provider as any).messages : (provider as any)?.data ?? [];
+    const data = items
+      .map((m: any) => {
+        const key = m?.key ?? {};
+        const msg = m?.message ?? {};
+        const fromMe = !!key.fromMe;
+        const text = msg?.conversation ?? msg?.extendedTextMessage?.text ?? msg?.imageMessage?.caption ?? null;
+        const mediaUrl = msg?.imageMessage?.url ?? msg?.videoMessage?.url ?? msg?.documentMessage?.url ?? null;
+        const type = m?.messageType ?? (mediaUrl ? 'media' : (text ? 'text' : null));
+        const ts = m?.messageTimestamp ?? m?.timestamp ?? Date.now() / 1000;
+        return {
+          id: m?.id ?? key?.id ?? m?.wamid ?? `${normalized}-${ts}`,
+          wamid: key?.id ?? m?.wamid ?? null,
+          fromMe,
+          direction: fromMe ? 'OUTBOUND' : 'INBOUND',
+          conversation: text,
+          caption: msg?.imageMessage?.caption ?? msg?.videoMessage?.caption ?? msg?.documentMessage?.caption ?? null,
+          mediaUrl,
+          messageType: type,
+          deliveryStatus: undefined,
+          timestamp: new Date((Number(ts) || Math.floor(Date.now() / 1000)) * 1000),
+          pushName: m?.pushName ?? m?.name ?? null,
+          phoneRaw: normalized
+        };
+      })
+      .filter((entry: any) => (opts?.direction === 'inbound' ? !entry.fromMe : opts?.direction === 'outbound' ? entry.fromMe : true));
+    // Provider response may not support pagination; return current slice
+    return { data, total: data.length, page: 1, limit };
+  }
 
-    const where: Record<string, any> = { userId, phoneRaw: normalized };
-    if (opts?.direction === 'inbound') where.fromMe = false;
-    if (opts?.direction === 'outbound') where.fromMe = true;
-
-    const [data, total] = await Promise.all([
-      (this.prisma as any).whatsappMessage.findMany({
-        where,
-        orderBy: { timestamp: 'asc' },
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          wamid: true,
-          fromMe: true,
-          direction: true,
-          conversation: true,
-          caption: true,
-          mediaUrl: true,
-          messageType: true,
-          deliveryStatus: true,
-          timestamp: true,
-          pushName: true,
-          phoneRaw: true
-        }
-      }),
-      (this.prisma as any).whatsappMessage.count({ where })
-    ]);
-
-    return { data, total, page, limit };
+  async listChats(userId: string, opts?: { instanceId?: string; limit?: number }) {
+    const provider = await this.evolution.listChats({ instanceId: opts?.instanceId, limit: opts?.limit ?? 100 });
+    const items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
+    const data = items
+      .map((c: any) => {
+        const phone = (c?.remoteJid ?? c?.jid ?? '').replace('@s.whatsapp.net', '') || c?.phoneRaw || null;
+        const normalized = phone ? phone.replace(/\D+/g, '') : null;
+        const last = c?.lastMessage ?? c?.message ?? {};
+        const lastText = last?.conversation ?? last?.message?.conversation ?? last?.extendedTextMessage?.text ?? last?.imageMessage?.caption ?? null;
+        const lastTs = last?.messageTimestamp ?? last?.timestamp ?? c?.timestamp ?? null;
+        return {
+          id: c?.id ?? normalized ?? Math.random().toString(36).slice(2),
+          name: c?.pushName ?? c?.name ?? null,
+          contact: normalized,
+          lastMessage: lastText ? { text: lastText, timestamp: lastTs ? new Date(Number(lastTs) * 1000).toISOString() : new Date().toISOString(), fromMe: !!(last?.key?.fromMe) } : null
+        };
+      })
+      .filter((x: any) => !!x.contact);
+    return data;
   }
 
   private async validateMedia(url: string): Promise<boolean> {

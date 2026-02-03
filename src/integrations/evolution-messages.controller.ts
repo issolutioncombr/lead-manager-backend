@@ -33,4 +33,14 @@ export class EvolutionMessagesController {
       limit: query.limit
     });
   }
+
+  @Get('chats')
+  async chats(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('instanceId') instanceId?: string,
+    @Query('limit') limit?: string
+  ) {
+    const data = await this.svc.listChats(user.userId, { instanceId: instanceId || undefined, limit: limit ? parseInt(limit, 10) || 100 : 100 });
+    return { data };
+  }
 }
