@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import https from 'node:https';
 
 @Injectable()
 export class EvolutionWebhookService {
@@ -33,7 +34,7 @@ export class EvolutionWebhookService {
     if (!userId) {
       return;
     }
-    await (this.prisma as any).webhook.create({
+    const created = await (this.prisma as any).webhook.create({
       data: {
         userId,
         instanceId,
@@ -50,6 +51,33 @@ export class EvolutionWebhookService {
         }
       }
     });
+    const n8nUrl = (process.env.N8N_WEBHOOK_URL ?? '').trim();
+    if (n8nUrl) {
+      const outbound = {
+        event: 'connection.update',
+        instance: {
+          userId,
+          instanceId,
+          providerInstanceId
+        },
+        data: {
+          state: payload?.data?.state ?? null,
+          statusReason: payload?.data?.statusReason ?? null,
+          wuid: payload?.data?.wuid ?? null
+        }
+      };
+      await (this.prisma as any).webhook.update({
+        where: { id: created.id },
+        data: { outboundJson: this.redactSecrets(outbound), outboundUrl: n8nUrl }
+      });
+      const ok = await this.postJson(n8nUrl, outbound);
+      if (ok.ok) {
+        await (this.prisma as any).webhook.update({
+          where: { id: created.id },
+          data: { status: 'sent', sentAt: new Date() }
+        });
+      }
+    }
   }
 
   async handleWebhook(payload: any) {
@@ -267,21 +295,13 @@ export class EvolutionWebhookService {
 
         const maxAttempts = 3;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          try {
-            const resp = await fetch(n8nUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(outbound)
+          const ok = await this.postJson(n8nUrl, outbound);
+          if (ok.ok) {
+            await (this.prisma as any).webhook.update({
+              where: { id: createdWebhook.id },
+              data: { status: 'sent', sentAt: new Date() }
             });
-            if (resp.ok) {
-              await (this.prisma as any).webhook.update({
-                where: { id: createdWebhook.id },
-                data: { status: 'sent', sentAt: new Date() }
-              });
-              break;
-            }
-          } catch (err) {
-            this.logger.warn(`Falha tentativa ${attempt} ao enviar webhook ao N8N: ${err}`);
+            break;
           }
           if (attempt < maxAttempts) {
             const waitMs = 300 * attempt;
@@ -424,5 +444,46 @@ export class EvolutionWebhookService {
       }
     }
     return out;
+  }
+
+  private async postJson(url: string, body: any): Promise<{ ok: boolean; status: number }> {
+    const payload = JSON.stringify(body);
+    const f: any = (global as any).fetch;
+    if (typeof f === 'function') {
+      try {
+        const resp = await f(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload
+        });
+        return { ok: resp.ok, status: resp.status ?? 0 };
+      } catch {
+        return { ok: false, status: 0 };
+      }
+    }
+    return await new Promise((resolve) => {
+      try {
+        const u = new URL(url);
+        const req = https.request(
+          {
+            protocol: u.protocol,
+            hostname: u.hostname,
+            port: u.port ? Number(u.port) : undefined,
+            path: u.pathname + (u.search ?? ''),
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) }
+          },
+          (res) => {
+            const code = res.statusCode ?? 0;
+            resolve({ ok: code >= 200 && code < 300, status: code });
+          }
+        );
+        req.on('error', () => resolve({ ok: false, status: 0 }));
+        req.write(payload);
+        req.end();
+      } catch {
+        resolve({ ok: false, status: 0 });
+      }
+    });
   }
 }
