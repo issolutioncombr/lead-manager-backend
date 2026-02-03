@@ -16,6 +16,8 @@ import { EvolutionIntegrationService } from './evolution-integration.service';
 import { EvolutionController } from './evolution.controller';
 import { EvolutionWebhookController } from './evolution-webhook.controller';
 import { EvolutionWebhookService } from './evolution-webhook.service';
+import { EvolutionMessagesController } from './evolution-messages.controller';
+import { EvolutionMessagesService } from './evolution-messages.service';
 import { paypalConfig } from './paypal.config';
 import { PaypalOAuthService } from './paypal-oauth.service';
 import { PaypalOAuthController } from './paypal-oauth.controller';
@@ -36,7 +38,8 @@ import { PaypalTransactionsController } from './paypal-transactions.controller';
     PaypalTransactionsController,
     GoogleCalendarController,
     EvolutionController,
-    EvolutionWebhookController
+    EvolutionWebhookController,
+    EvolutionMessagesController
   ],
   providers: [
     IntegrationsService,
@@ -46,14 +49,16 @@ import { PaypalTransactionsController } from './paypal-transactions.controller';
     GoogleCalendarService,
     EvolutionService,
     EvolutionIntegrationService,
-    EvolutionWebhookService
+    EvolutionWebhookService,
+    EvolutionMessagesService
   ],
   exports: [
     PaypalOAuthService,
     PaypalTransactionsService,
     EvolutionService,
     EvolutionIntegrationService,
-    EvolutionWebhookService
+    EvolutionWebhookService,
+    EvolutionMessagesService
   ]
 })
 export class IntegrationsModule {}

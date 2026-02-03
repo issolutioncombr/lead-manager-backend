@@ -523,6 +523,19 @@ enum WeekDay {
   SATURDAY
 }
 
+enum WhatsappMessageStatus {
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum WhatsappMessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
 model WhatsappMessage {
   id        String   @id @default(cuid())
   userId    String
@@ -533,6 +546,7 @@ model WhatsappMessage {
   remoteJidAlt String?
   phoneRaw  String?  // Normalized phone number
   fromMe    Boolean
+  direction WhatsappMessageDirection?
   pushName  String?
   sender    String?
   participant String?
@@ -541,10 +555,13 @@ model WhatsappMessage {
   senderTimestamp BigInt? // Usando BigInt para timestamp unix preciso ou Int se for segundos
   recipientTimestamp BigInt?
   status    String?
+  deliveryStatus WhatsappMessageStatus?
 
   // Conteúdo
   messageType  String?
   conversation String? @db.Text
+  mediaUrl     String? @db.Text
+  caption      String?
   intent       String? // alopecia | queda | preco | agenda | curiosidade
   
   // Enriquecimento de Dados (CRM) - Para envio ao Meta CAPI

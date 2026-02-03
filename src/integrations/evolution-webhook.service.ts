@@ -145,6 +145,44 @@ export class EvolutionWebhookService {
         }
       });
 
+      const direction = fromMe ? 'OUTBOUND' : 'INBOUND';
+      const mediaCaption = message?.imageMessage?.caption || message?.videoMessage?.caption || message?.documentMessage?.caption || null;
+      const mediaUrl = message?.imageMessage?.url || message?.videoMessage?.url || message?.documentMessage?.url || null;
+
+      await (this.prisma as any).whatsappMessage.upsert({
+        where: { wamid },
+        create: {
+          userId,
+          wamid,
+          remoteJid,
+          remoteJidAlt: remoteJid,
+          phoneRaw,
+          fromMe,
+          direction,
+          pushName: typeof pushName === 'string' ? pushName : null,
+          sender: payload?.body?.sender ?? null,
+          addressingMode: key?.addressingMode ?? null,
+          participant: key?.participant ?? null,
+          timestamp: messageTimestamp ? new Date(messageTimestamp * 1000) : new Date(),
+          status: data?.status ?? null,
+          messageType,
+          conversation: conversationText ?? null,
+          caption: mediaCaption,
+          mediaUrl,
+          rawJson: this.redactSecrets(payload)
+        },
+        update: {
+          fromMe,
+          direction,
+          messageType,
+          conversation: conversationText ?? null,
+          caption: mediaCaption,
+          mediaUrl,
+          status: data?.status ?? null,
+          rawJson: this.redactSecrets(payload)
+        }
+      });
+
       const n8nUrl = (process.env.N8N_WEBHOOK_URL ?? '').trim();
       if (n8nUrl) {
         const userApiKey = await (this.prisma as any).user.findUnique({

@@ -86,7 +86,12 @@ export class BotButtonsService {
           data: { status: 'sent', sentAt: new Date() }
         });
       }
-    } catch {}
+    } catch (err) {
+      await (this.prisma as any).webhook.update({
+        where: { id: webhook.id },
+        data: { status: 'failed' }
+      });
+    }
     return { ok: true };
   }
 

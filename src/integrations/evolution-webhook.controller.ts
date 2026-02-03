@@ -14,6 +14,10 @@ export class EvolutionWebhookController {
     @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
     @Body() payload: any
   ) {
+    const expected = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    if (expected && tokenHeader !== expected) {
+      throw new UnauthorizedException('Invalid webhook token');
+    }
     // Processa assincronamente para não travar a Evolution
     // Em produção, idealmente usaria uma fila (BullMQ)
     this.webhookService.handleWebhook(payload).catch(err => {
