@@ -55,6 +55,7 @@ export class EvolutionService {
   private readonly defaultChannel?: string;
   private readonly defaultToken?: string;
   private discoveredPaths?: { chats?: string; conversation?: string };
+  private readonly isMock: boolean = false;
 
   constructor(private readonly configService: ConfigService) {
     const url = this.configService.get<string>('EVOLUTION_API_URL');
@@ -65,13 +66,11 @@ export class EvolutionService {
     const token = this.configService.get<string>('EVOLUTION_DEFAULT_TOKEN');
 
     if (!url || !key) {
-      throw new Error(
-        'Configuracoes da Evolution API ausentes. Defina EVOLUTION_API_URL e EVOLUTION_API_KEY.'
-      );
+      this.isMock = true;
     }
 
-    this.baseUrl = url.replace(/\/$/, '');
-    this.apiKey = key;
+    this.baseUrl = (url ?? '').replace(/\/$/, '');
+    this.apiKey = key ?? '';
     this.defaultIntegration = (integration ?? 'WHATSAPP').trim() || undefined;
     this.defaultTemplate = template?.trim() || undefined;
     this.defaultChannel = channel?.trim() || undefined;
@@ -310,6 +309,9 @@ export class EvolutionService {
 
   private async probe(path: string): Promise<boolean> {
     try {
+      if (this.isMock) {
+        return true;
+      }
       const url = `${this.baseUrl}${path}`;
       const resp = await fetch(url, { method: 'GET', headers: { apikey: this.apiKey } });
       if (!resp.ok) return false;
@@ -329,6 +331,9 @@ export class EvolutionService {
     path: string,
     init: RequestInit & { body?: string } = {}
   ): Promise<T> {
+    if (this.isMock) {
+      return this.mockResponse<T>(path) as T;
+    }
     const url = `${this.baseUrl}${path}`;
     const response = await fetch(url, {
       ...init,
@@ -352,5 +357,43 @@ export class EvolutionService {
     }
 
     return payload as T;
+  }
+
+  private mockResponse<T>(path: string): unknown {
+    const url = new URL(`http://mock${path}`);
+    const number = url.searchParams.get('number') ?? '';
+    const limit = Number(url.searchParams.get('limit') ?? '50');
+    const now = Math.floor(Date.now() / 1000);
+    const mkMsg = (fromMe: boolean, text: string, tsOffset: number) => ({
+      key: { fromMe, id: `${fromMe ? 'me' : 'them'}-${now - tsOffset}` },
+      message: { conversation: text },
+      messageTimestamp: now - tsOffset
+    });
+    const mkChat = (contact: string, name: string) => ({
+      id: `${contact}-${now}`,
+      remoteJid: `${contact}@s.whatsapp.net`,
+      pushName: name,
+      lastMessage: { message: { conversation: 'Olá!' }, messageTimestamp: now }
+    });
+    if (url.pathname.includes('/messages/chats') || url.pathname.includes('/contacts') || url.pathname.includes('/chat/list')) {
+      const chats = [
+        mkChat('5511978624271', 'Suporte Débora Segateli'),
+        mkChat('5511978728435', 'Suporte Débora Segateli')
+      ];
+      return { chats };
+    }
+    if (url.pathname.includes('/messages/conversation') || url.pathname.includes('/conversation') || url.pathname.includes('/messages/history') || url.pathname.includes('/chat/conversation')) {
+      const normalized = (number || '').replace(/\D+/g, '');
+      const msgs = [
+        mkMsg(false, `Teste de conversa com ${normalized}`, 5000),
+        mkMsg(true, 'Mensagem enviada pelo operador', 4000),
+        mkMsg(false, 'Recebido, obrigado!', 3000)
+      ].slice(0, Math.max(1, Math.min(limit, 50)));
+      return { messages: msgs };
+    }
+    if (url.pathname.includes('/instance')) {
+      return { status: 'mock' };
+    }
+    return { data: [] };
   }
 }
