@@ -33,4 +33,13 @@ export class BotButtonsController {
   trigger(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() body: { leadId: string }) {
     return this.svc.trigger(user.userId, id, body.leadId);
   }
+
+  @Post(':id/trigger-by-phone')
+  triggerByPhone(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() body: { phoneRaw: string }
+  ) {
+    return this.svc.triggerByPhone(user.userId, id, body.phoneRaw);
+  }
 }

@@ -89,4 +89,12 @@ export class BotButtonsService {
     } catch {}
     return { ok: true };
   }
+
+  async triggerByPhone(userId: string, id: string, phoneRaw: string) {
+    const btn = await (this.prisma as any).botButton.findFirst({ where: { id, userId, active: true } });
+    if (!btn) throw new NotFoundException('BotButton inválido');
+    const lead = await (this.prisma as any).lead.findFirst({ where: { userId, contact: phoneRaw } });
+    if (!lead) throw new NotFoundException('Lead não encontrado para o telefone informado');
+    return this.trigger(userId, id, lead.id);
+  }
 }
