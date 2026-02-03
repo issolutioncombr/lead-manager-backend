@@ -162,7 +162,7 @@ export class EvolutionMessagesService {
           caption: msg?.imageMessage?.caption ?? msg?.videoMessage?.caption ?? msg?.documentMessage?.caption ?? null,
           mediaUrl,
           messageType: type,
-          deliveryStatus: undefined,
+          deliveryStatus: m?.deliveryStatus ?? null,
           timestamp: new Date((Number(ts) || Math.floor(Date.now() / 1000)) * 1000),
           pushName: m?.pushName ?? m?.name ?? null,
           phoneRaw: normalized
@@ -201,6 +201,7 @@ export class EvolutionMessagesService {
         ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
         : { conversation: m.conversation ?? null },
       messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
+      deliveryStatus: m.deliveryStatus ?? null,
       messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
       pushName: m.pushName ?? null
     })) : [];
@@ -221,13 +222,87 @@ export class EvolutionMessagesService {
         caption: msg?.imageMessage?.caption ?? msg?.videoMessage?.caption ?? msg?.documentMessage?.caption ?? null,
         mediaUrl,
         messageType: type,
-        deliveryStatus: undefined,
+        deliveryStatus: m?.deliveryStatus ?? null,
         timestamp: new Date((Number(ts) || Math.floor(Date.now() / 1000)) * 1000),
         pushName: m?.pushName ?? m?.name ?? null,
         phoneRaw: normalized
       };
     });
     return { data, total: data.length, page: 1, limit };
+  }
+
+  async listUpdates(
+    userId: string,
+    phone: string,
+    opts?: {
+      limit?: number;
+      instanceId?: string;
+      source?: 'provider' | 'local';
+      afterTimestamp?: string;
+      afterUpdatedAt?: string;
+    }
+  ) {
+    const normalized = normalizePhone(phone);
+    if (!normalized || normalized.length < 7) {
+      throw new BadRequestException('Telefone inválido');
+    }
+    if (opts?.source === 'provider') {
+      throw new BadRequestException('Updates suportam apenas fonte local no momento');
+    }
+    const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
+    const afterTimestamp = this.parseDateOrNull(opts?.afterTimestamp);
+    const afterUpdatedAt = this.parseDateOrNull(opts?.afterUpdatedAt);
+
+    const basePhoneWhere = {
+      OR: [
+        { phoneRaw: normalized },
+        { remoteJid: `${normalized}@s.whatsapp.net` },
+        { remoteJidAlt: `${normalized}@s.whatsapp.net` }
+      ]
+    };
+
+    const cursorWhere: any[] = [];
+    if (afterTimestamp) cursorWhere.push({ timestamp: { gt: afterTimestamp } });
+    if (afterUpdatedAt) cursorWhere.push({ updatedAt: { gt: afterUpdatedAt } });
+
+    const where: any = {
+      userId,
+      ...basePhoneWhere,
+      ...(cursorWhere.length ? { AND: [{ OR: cursorWhere }] } : {})
+    };
+
+    const records = await (this.prisma as any).whatsappMessage.findMany({
+      where,
+      orderBy: [{ timestamp: 'asc' }, { updatedAt: 'asc' }],
+      take: limit
+    });
+
+    const data = (Array.isArray(records) ? records : []).map((m: any) => ({
+      id: m.wamid ?? m.id,
+      wamid: m.wamid ?? null,
+      fromMe: !!m.fromMe,
+      direction: m.direction ?? (m.fromMe ? 'OUTBOUND' : 'INBOUND'),
+      conversation: m.conversation ?? null,
+      caption: m.caption ?? null,
+      mediaUrl: m.mediaUrl ?? null,
+      messageType: m.messageType ?? null,
+      deliveryStatus: m.deliveryStatus ?? null,
+      timestamp: m.timestamp instanceof Date ? m.timestamp.toISOString() : new Date(m.timestamp).toISOString(),
+      updatedAt: m.updatedAt instanceof Date ? m.updatedAt.toISOString() : new Date(m.updatedAt).toISOString(),
+      pushName: m.pushName ?? null,
+      phoneRaw: normalized
+    }));
+
+    const lastTimestamp = data.length ? data[data.length - 1].timestamp : (afterTimestamp ? afterTimestamp.toISOString() : new Date(0).toISOString());
+    const lastUpdatedAt = data.reduce((acc: string, it: any) => (it.updatedAt > acc ? it.updatedAt : acc), afterUpdatedAt ? afterUpdatedAt.toISOString() : new Date(0).toISOString());
+
+    return {
+      data,
+      cursor: {
+        lastTimestamp,
+        lastUpdatedAt
+      }
+    };
   }
 
   async listChats(userId: string, opts?: { instanceId?: string; limit?: number; source?: 'provider' | 'local' }) {
@@ -367,6 +442,7 @@ export class EvolutionMessagesService {
             ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
             : { conversation: m.conversation ?? null },
           messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
+          deliveryStatus: m.deliveryStatus ?? null,
           messageTimestamp: Math.floor(
             (m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000
           ),
@@ -416,5 +492,18 @@ export class EvolutionMessagesService {
       if (Array.isArray(c)) return c;
     }
     return [];
+  }
+
+  private parseDateOrNull(value: string | undefined): Date | null {
+    const raw = (value ?? '').trim();
+    if (!raw) return null;
+    const fromNumber = Number(raw);
+    if (Number.isFinite(fromNumber) && fromNumber > 0) {
+      const ms = fromNumber > 10_000_000_000 ? fromNumber : fromNumber * 1000;
+      const dt = new Date(ms);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    const dt = new Date(raw);
+    return Number.isNaN(dt.getTime()) ? null : dt;
   }
 }

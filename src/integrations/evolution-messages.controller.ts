@@ -3,6 +3,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { EvolutionMessagesService } from './evolution-messages.service';
 import { EvolutionSendMessageDto } from './dto/evolution-send-message.dto';
 import { EvolutionConversationQueryDto } from './dto/evolution-conversation-query.dto';
+import { EvolutionUpdatesQueryDto } from './dto/evolution-updates-query.dto';
 
 type AuthenticatedUser = { userId: string; email: string };
 
@@ -45,6 +46,20 @@ export class EvolutionMessagesController {
   ) {
     const data = await this.svc.listChats(user.userId, { instanceId: instanceId || undefined, limit: limit ? parseInt(limit, 10) || 100 : 100, source });
     return { data };
+  }
+
+  @Get('updates')
+  async updates(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: EvolutionUpdatesQueryDto
+  ) {
+    return this.svc.listUpdates(user.userId, query.phone, {
+      instanceId: query.instanceId,
+      source: query.source,
+      limit: query.limit,
+      afterTimestamp: query.afterTimestamp,
+      afterUpdatedAt: query.afterUpdatedAt
+    });
   }
 
   @Get('public-conversation')
