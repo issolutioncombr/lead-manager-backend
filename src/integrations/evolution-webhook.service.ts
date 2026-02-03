@@ -179,7 +179,7 @@ export class EvolutionWebhookService {
     const isAd = attributionData.conversionSource === 'FB_Ads' || !!externalAdReply.sourceId;
     
     // 5. Normalização e Hashing
-    const phoneRaw = this.normalizePhone(remoteJid);
+    const phoneRaw = this.getNormalizedPhone(key);
     const hashedPhone = this.hashData(phoneRaw);
     
     // Tenta extrair primeiro e último nome do pushName (heurística simples)
@@ -351,7 +351,7 @@ export class EvolutionWebhookService {
       }
     };
     if (!data?.key) return {};
-    const phone = cleanPhone(data?.key?.remoteJid);
+    const phone = cleanPhone(data?.key?.remoteJidAlt ?? data?.key?.remoteJid);
     const msg = data?.message ?? {};
     const ctxMsg = msg?.messageContextInfo ?? {};
     const deviceMeta = ctxMsg?.deviceListMetadata ?? {};
@@ -720,5 +720,14 @@ export class EvolutionWebhookService {
       });
     }
     return;
+  }
+
+  private getNormalizedPhone(key: any): string | null {
+    const addressingMode = key?.addressingMode ?? '';
+    const jid = key?.remoteJid ?? '';
+    const alt = key?.remoteJidAlt ?? '';
+    const candidate = (String(jid).includes('@lid') || addressingMode === 'lid') ? (alt || jid) : jid;
+    const normalized = String(candidate).replace('@s.whatsapp.net', '').replace(/\D/g, '');
+    return normalized || null;
   }
 }
