@@ -503,11 +503,13 @@ export class EvolutionWebhookService {
         providerInstanceId = instanceRecord.providerInstanceId;
       }
     }
+    let updatedCount = 0;
     if (keyId) {
-      await (this.prisma as any).whatsappMessage.updateMany({
+      const result = await (this.prisma as any).whatsappMessage.updateMany({
         where: { wamid: keyId },
         data: { deliveryStatus: mapped ?? null, status: status ?? null }
       });
+      updatedCount = result?.count ?? 0;
     }
     if (userId) {
       await (this.prisma as any).webhook.create({
@@ -526,6 +528,49 @@ export class EvolutionWebhookService {
           }
         }
       });
+
+      if (updatedCount === 0 && keyId) {
+        let phoneRaw: string | null = null;
+        try {
+          const recent = await (this.prisma as any).webhook.findFirst({
+            where: {
+              providerInstanceId,
+              jsonrow: { path: ['remoteJid'], equals: remoteJid }
+            },
+            orderBy: { receivedAt: 'desc' },
+            select: { phoneRaw: true }
+          });
+          phoneRaw = recent?.phoneRaw ?? null;
+        } catch {}
+        if (phoneRaw) {
+          const direction = data?.fromMe ? 'OUTBOUND' : 'INBOUND';
+          await (this.prisma as any).whatsappMessage.upsert({
+            where: { wamid: keyId },
+            create: {
+              userId,
+              wamid: keyId,
+              remoteJid: remoteJid ?? `${phoneRaw}@s.whatsapp.net`,
+              remoteJidAlt: `${phoneRaw}@s.whatsapp.net`,
+              phoneRaw,
+              fromMe: !!data?.fromMe,
+              direction,
+              timestamp: new Date(),
+              status: status ?? null,
+              deliveryStatus: mapped ?? null,
+              messageType: null,
+              conversation: null,
+              caption: null,
+              mediaUrl: null,
+              rawJson: this.redactSecrets(payload)
+            },
+            update: {
+              status: status ?? null,
+              deliveryStatus: mapped ?? null,
+              rawJson: this.redactSecrets(payload)
+            }
+          });
+        }
+      }
     }
   }
 
