@@ -244,23 +244,23 @@ export class EvolutionService {
     );
   }
 
-  async getConversation(number: string, opts?: { limit?: number; cursor?: string }) {
+  async getConversation(number: string, opts?: { limit?: number; cursor?: string; token?: string }) {
     const path = await this.getConversationPath(number, opts);
     return this.request<any>(path, { method: 'GET' });
   }
 
-  async listChats(opts?: { instanceId?: string; limit?: number; cursor?: string }) {
+  async listChats(opts?: { instanceId?: string; limit?: number; cursor?: string; token?: string }) {
     const path = await this.getChatsPath(opts);
     return this.request<any>(path, { method: 'GET' });
   }
 
-  private async getChatsPath(opts?: { instanceId?: string; limit?: number; cursor?: string }): Promise<string> {
+  private async getChatsPath(opts?: { instanceId?: string; limit?: number; cursor?: string; token?: string }): Promise<string> {
     if (this.discoveredPaths?.chats) {
       return this.appendQuery(this.discoveredPaths.chats, opts);
     }
     const candidates = ['/messages/chats', '/chats', '/chat/list', '/messages/contacts', '/contacts'];
     for (const base of candidates) {
-      const tryPath = this.appendQuery(base, { limit: opts?.limit ?? 100, instanceId: opts?.instanceId });
+      const tryPath = this.appendQuery(base, { limit: opts?.limit ?? 100, instanceId: opts?.instanceId, token: opts?.token });
       const ok = await this.probe(tryPath);
       if (ok) {
         this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: base };
@@ -271,9 +271,9 @@ export class EvolutionService {
     return this.appendQuery('/messages/chats', opts);
   }
 
-  private async getConversationPath(number: string, opts?: { limit?: number; cursor?: string }): Promise<string> {
+  private async getConversationPath(number: string, opts?: { limit?: number; cursor?: string; token?: string }): Promise<string> {
     if (this.discoveredPaths?.conversation) {
-      return this.appendQuery(this.discoveredPaths.conversation, { number, limit: opts?.limit, cursor: opts?.cursor });
+      return this.appendQuery(this.discoveredPaths.conversation, { number, limit: opts?.limit, cursor: opts?.cursor, token: opts?.token });
     }
     const q = `number=${encodeURIComponent(number)}`;
     const candidates = [
@@ -283,7 +283,7 @@ export class EvolutionService {
       `/messages/history?${q}`
     ];
     for (const base of candidates) {
-      const tryPath = this.appendQuery(base, { limit: opts?.limit, cursor: opts?.cursor });
+      const tryPath = this.appendQuery(base, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token });
       const ok = await this.probe(tryPath);
       if (ok) {
         const baseWithQ = base.includes('?') ? base.split('?')[0] + '?' : base + '?';
@@ -293,7 +293,7 @@ export class EvolutionService {
     }
     const fallback = `/messages/conversation?${q}`;
     this.discoveredPaths = { ...(this.discoveredPaths ?? {}), conversation: '/messages/conversation?' };
-    return this.appendQuery(fallback, { limit: opts?.limit, cursor: opts?.cursor });
+    return this.appendQuery(fallback, { limit: opts?.limit, cursor: opts?.cursor, token: opts?.token });
   }
 
   private appendQuery(path: string, params?: Record<string, any> | undefined): string {

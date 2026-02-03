@@ -103,7 +103,8 @@ export class EvolutionMessagesService {
   async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number }) {
     const normalized = normalizePhone(phone);
     const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
-    const provider = await this.evolution.getConversation(`+${normalized}`, { limit });
+    const token = await this.resolveToken(userId);
+    const provider = await this.evolution.getConversation(`+${normalized}`, { limit, token: token ?? undefined });
     const items = Array.isArray((provider as any)?.messages) ? (provider as any).messages : (provider as any)?.data ?? [];
     const data = items
       .map((m: any) => {
@@ -135,7 +136,8 @@ export class EvolutionMessagesService {
   }
 
   async listChats(userId: string, opts?: { instanceId?: string; limit?: number }) {
-    const provider = await this.evolution.listChats({ instanceId: opts?.instanceId, limit: opts?.limit ?? 100 });
+    const token = await this.resolveToken(userId, opts?.instanceId);
+    const provider = await this.evolution.listChats({ instanceId: opts?.instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
     const items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
     const data = items
       .map((c: any) => {
@@ -167,5 +169,19 @@ export class EvolutionMessagesService {
     } catch {
       return false;
     }
+  }
+
+  private async resolveToken(userId: string, instanceId?: string | null): Promise<string | null> {
+    const where: any = instanceId ? { userId, instanceId } : { userId };
+    const record = await (this.prisma as any).evolutionInstance.findFirst({
+      where,
+      orderBy: { updatedAt: 'desc' }
+    });
+    const meta = record?.metadata;
+    if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+      return null;
+    }
+    const token = (meta as any).token;
+    return typeof token === 'string' && token.length > 0 ? token : null;
   }
 }
