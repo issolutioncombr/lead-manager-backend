@@ -48,4 +48,99 @@ export class EvolutionWebhookController {
     this.webhookService.handleConnectionUpdate(payload).catch(() => {});
     return { status: 'received' };
   }
+
+  @Public()
+  @Post('messages-upsert')
+  @HttpCode(HttpStatus.OK)
+  async handleMessagesUpsert(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+    this.webhookService.handleWebhook(payload).catch(() => {});
+    return { status: 'received' };
+  }
+
+  @Public()
+  @Post('messages-update')
+  @HttpCode(HttpStatus.OK)
+  async handleMessagesUpdate(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+    this.webhookService.handleMessagesUpdate(payload).catch(() => {});
+    return { status: 'received' };
+  }
+
+  @Public()
+  @Post('contacts-update')
+  @HttpCode(HttpStatus.OK)
+  async handleContactsUpdate(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+    this.webhookService.handleContactsUpdate(payload).catch(() => {});
+    return { status: 'received' };
+  }
+
+  @Public()
+  @Post('chats-update')
+  @HttpCode(HttpStatus.OK)
+  async handleChatsUpdate(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+    this.webhookService.handleChatsUpdate(payload).catch(() => {});
+    return { status: 'received' };
+  }
+
+  @Public()
+  @Post('chats-upsert')
+  @HttpCode(HttpStatus.OK)
+  async handleChatsUpsert(
+    @Headers('authorization') auth: string | undefined,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
+    const expectedToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    const expectedAuth = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    const tokenValid = expectedToken ? tokenHeader === expectedToken : true;
+    const authValid = expectedAuth ? auth === expectedAuth : true;
+    if (!(tokenValid && authValid)) {
+      throw new UnauthorizedException('Invalid webhook credentials');
+    }
+    this.webhookService.handleChatsUpsert(payload).catch(() => {});
+    return { status: 'received' };
+  }
 }

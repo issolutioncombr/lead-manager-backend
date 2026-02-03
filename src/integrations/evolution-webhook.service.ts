@@ -465,6 +465,153 @@ export class EvolutionWebhookService {
     return null;
   }
 
+  async handleMessagesUpdate(payload: any) {
+    const instanceName = payload?.instance ?? null;
+    const data = payload?.data ?? {};
+    const keyId = data?.keyId ?? data?.key?.id ?? null;
+    const remoteJid = data?.remoteJid ?? data?.key?.remoteJid ?? null;
+    const status = data?.status ?? null;
+    let userId: string | null = null;
+    let instanceId: string | null = null;
+    let providerInstanceId: string | null = null;
+    if (instanceName) {
+      const instanceRecord = await this.prisma.evolutionInstance.findFirst({
+        where: {
+          OR: [
+            { providerInstanceId: instanceName },
+            { metadata: { path: ['displayName'], equals: instanceName } },
+            { metadata: { path: ['instanceName'], equals: instanceName } }
+          ]
+        },
+        select: { userId: true, instanceId: true, providerInstanceId: true }
+      });
+      if (instanceRecord) {
+        userId = instanceRecord.userId;
+        instanceId = instanceRecord.instanceId;
+        providerInstanceId = instanceRecord.providerInstanceId;
+      }
+    }
+    if (keyId) {
+      await (this.prisma as any).whatsappMessage.updateMany({
+        where: { wamid: keyId },
+        data: { deliveryStatus: status ?? null, status: status ?? null }
+      });
+    }
+    if (userId) {
+      await (this.prisma as any).webhook.create({
+        data: {
+          userId,
+          instanceId,
+          providerInstanceId,
+          phoneRaw: remoteJid ? this.normalizePhone(remoteJid) : null,
+          receivedAt: new Date(),
+          rawJson: this.redactSecrets(payload),
+          jsonrow: {
+            eventType: payload?.event ?? 'messages.update',
+            keyId,
+            remoteJid,
+            status
+          }
+        }
+      });
+    }
+  }
+
+  async handleContactsUpdate(payload: any) {
+    const instanceName = payload?.instance ?? null;
+    let userId: string | null = null;
+    let instanceId: string | null = null;
+    let providerInstanceId: string | null = null;
+    if (instanceName) {
+      const instanceRecord = await this.prisma.evolutionInstance.findFirst({
+        where: {
+          OR: [
+            { providerInstanceId: instanceName },
+            { metadata: { path: ['displayName'], equals: instanceName } },
+            { metadata: { path: ['instanceName'], equals: instanceName } }
+          ]
+        },
+        select: { userId: true, instanceId: true, providerInstanceId: true }
+      });
+      if (instanceRecord) {
+        userId = instanceRecord.userId;
+        instanceId = instanceRecord.instanceId;
+        providerInstanceId = instanceRecord.providerInstanceId;
+      }
+    }
+    const items = Array.isArray(payload?.data) ? payload.data : [payload?.data].filter(Boolean);
+    if (userId) {
+      for (const it of items) {
+        const remoteJid = it?.remoteJid ?? null;
+        await (this.prisma as any).webhook.create({
+          data: {
+            userId,
+            instanceId,
+            providerInstanceId,
+            phoneRaw: remoteJid ? this.normalizePhone(remoteJid) : null,
+            receivedAt: new Date(),
+            rawJson: this.redactSecrets(payload),
+            jsonrow: {
+              eventType: payload?.event ?? 'contacts.update',
+              remoteJid,
+              pushName: it?.pushName ?? null,
+              profilePicUrl: it?.profilePicUrl ?? null
+            }
+          }
+        });
+      }
+    }
+  }
+
+  async handleChatsUpdate(payload: any) {
+    const instanceName = payload?.instance ?? null;
+    let userId: string | null = null;
+    let instanceId: string | null = null;
+    let providerInstanceId: string | null = null;
+    if (instanceName) {
+      const instanceRecord = await this.prisma.evolutionInstance.findFirst({
+        where: {
+          OR: [
+            { providerInstanceId: instanceName },
+            { metadata: { path: ['displayName'], equals: instanceName } },
+            { metadata: { path: ['instanceName'], equals: instanceName } }
+          ]
+        },
+        select: { userId: true, instanceId: true, providerInstanceId: true }
+      });
+      if (instanceRecord) {
+        userId = instanceRecord.userId;
+        instanceId = instanceRecord.instanceId;
+        providerInstanceId = instanceRecord.providerInstanceId;
+      }
+    }
+    const items = Array.isArray(payload?.data) ? payload.data : [payload?.data].filter(Boolean);
+    if (userId) {
+      for (const it of items) {
+        const remoteJid = it?.remoteJid ?? null;
+        await (this.prisma as any).webhook.create({
+          data: {
+            userId,
+            instanceId,
+            providerInstanceId,
+            phoneRaw: remoteJid ? this.normalizePhone(remoteJid) : null,
+            receivedAt: new Date(),
+            rawJson: this.redactSecrets(payload),
+            jsonrow: {
+              eventType: payload?.event ?? 'chats.update',
+              remoteJid,
+              unreadMessages: it?.unreadMessages ?? null
+            }
+          }
+        });
+      }
+    }
+  }
+
+  async handleChatsUpsert(payload: any) {
+    return this.handleChatsUpdate(payload);
+  }
+
   private async postJson(url: string, body: any): Promise<{ ok: boolean; status: number }> {
     const payload = JSON.stringify(body);
     const f: any = (global as any).fetch;
