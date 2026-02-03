@@ -221,20 +221,30 @@ export class EvolutionWebhookService {
           }
         });
 
-        try {
-          const resp = await fetch(n8nUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(outbound)
-          });
-          if (resp.ok) {
-            await (this.prisma as any).webhook.update({
-              where: { id: createdWebhook.id },
-              data: { status: 'sent', sentAt: new Date() }
+        const maxAttempts = 3;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          try {
+            const resp = await fetch(n8nUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(outbound)
             });
+            if (resp.ok) {
+              await (this.prisma as any).webhook.update({
+                where: { id: createdWebhook.id },
+                data: { status: 'sent', sentAt: new Date() }
+              });
+              break;
+            }
+          } catch (err) {
+            this.logger.warn(`Falha tentativa ${attempt} ao enviar webhook ao N8N: ${err}`);
           }
-        } catch (err) {
-          this.logger.warn(`Falha ao enviar webhook ao N8N: ${err}`);
+          if (attempt < maxAttempts) {
+            const waitMs = 300 * attempt;
+            await new Promise((r) => setTimeout(r, waitMs));
+          } else {
+            this.logger.warn('Falha ao enviar webhook ao N8N após retries');
+          }
         }
       }
     }

@@ -10,6 +10,7 @@ function normalizePhone(phone: string): string {
 
 @Injectable()
 export class EvolutionMessagesService {
+  private readonly buckets = new Map<string, { count: number; resetAt: number }>();
   constructor(private readonly prisma: PrismaService, private readonly evolution: EvolutionService) {}
 
   async sendMessage(userId: string, payload: {
@@ -20,6 +21,18 @@ export class EvolutionMessagesService {
     clientMessageId?: string;
     instanceId?: string;
   }) {
+    const nowMs = Date.now();
+    const bucket = this.buckets.get(userId) ?? { count: 0, resetAt: nowMs + 60_000 };
+    if (nowMs > bucket.resetAt) {
+      bucket.count = 0;
+      bucket.resetAt = nowMs + 60_000;
+    }
+    bucket.count += 1;
+    this.buckets.set(userId, bucket);
+    if (bucket.count > 30) {
+      throw new BadRequestException('Limite de envio excedido');
+    }
+
     const normalized = normalizePhone(payload.phone);
     if (!normalized || normalized.length < 7) {
       throw new BadRequestException('Telefone inválido');
@@ -54,8 +67,37 @@ export class EvolutionMessagesService {
       create: record,
       update: record
     });
+    if (payload.mediaUrl) {
+      const ok = await this.validateMedia(payload.mediaUrl);
+      if (!ok) {
+        await (this.prisma as any).whatsappMessage.update({
+          where: { wamid },
+          data: { deliveryStatus: 'FAILED' }
+        });
+        throw new BadRequestException('Mídia inválida ou muito grande');
+      }
+    }
 
-    return { id: wamid, status: 'queued' };
+    try {
+      const providerResp = await this.evolution.sendMessage({
+        instanceId: payload.instanceId ?? null,
+        number: `+${normalized}`,
+        text: payload.text,
+        mediaUrl: payload.mediaUrl,
+        caption: payload.caption
+      });
+      await (this.prisma as any).whatsappMessage.update({
+        where: { wamid },
+        data: { deliveryStatus: 'SENT', rawJson: { ...(record.rawJson ?? {}), providerResp } }
+      });
+      return { id: wamid, status: 'sent' };
+    } catch {
+      await (this.prisma as any).whatsappMessage.update({
+        where: { wamid },
+        data: { deliveryStatus: 'FAILED' }
+      });
+      return { id: wamid, status: 'failed' };
+    }
   }
 
   async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number }) {
@@ -93,5 +135,19 @@ export class EvolutionMessagesService {
     ]);
 
     return { data, total, page, limit };
+  }
+
+  private async validateMedia(url: string): Promise<boolean> {
+    try {
+      const resp = await fetch(url, { method: 'HEAD' });
+      if (!resp.ok) return false;
+      const type = resp.headers.get('content-type') || '';
+      const len = parseInt(resp.headers.get('content-length') || '0', 10);
+      const allowed = type.startsWith('image/') || type.startsWith('application/') || type.startsWith('video/');
+      const max = 10 * 1024 * 1024;
+      return allowed && (!len || len <= max);
+    } catch {
+      return false;
+    }
   }
 }

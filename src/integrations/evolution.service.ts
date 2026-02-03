@@ -217,6 +217,32 @@ export class EvolutionService {
     }
   }
 
+  async sendMessage(payload: {
+    instanceId?: string | null;
+    number: string;
+    text?: string;
+    mediaUrl?: string;
+    caption?: string;
+    token?: string | null;
+  }): Promise<{ id?: string; message?: string; status?: string }> {
+    const body: Record<string, unknown> = {
+      number: payload.number,
+      token: payload.token ?? this.defaultToken ?? null
+    };
+    if (payload.text) body.text = payload.text;
+    if (payload.mediaUrl) body.mediaUrl = payload.mediaUrl;
+    if (payload.caption) body.caption = payload.caption;
+    if (payload.instanceId) body.instanceId = payload.instanceId;
+
+    return this.request<{ id?: string; message?: string; status?: string }>(
+      '/messages/send',
+      {
+        method: 'POST',
+        body: JSON.stringify(body)
+      }
+    );
+  }
+
   private async request<T = unknown>(
     path: string,
     init: RequestInit & { body?: string } = {}

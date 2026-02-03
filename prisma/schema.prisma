@@ -637,6 +637,7 @@ model WhatsappMessage {
   @@index([userId])
   @@index([remoteJid])
   @@index([timestamp])
+  @@index([createdAt])
   @@index([ctwaClid])
   @@index([slotId])
   @@index([leadId])
