@@ -119,14 +119,12 @@ export class EvolutionMessagesService {
       for (const instanceId of instanceCandidates) {
         try {
           const token = await this.resolveToken(userId, instanceId);
-          const provider = await this.evolution.findMessages({
+          const provider = await this.evolution.getConversation(`+${normalized}`, {
             instanceId,
-            where: { remoteJid: `${normalized}@s.whatsapp.net` },
             limit,
             token: token ?? undefined
           });
-          const records = (provider as any)?.messages?.records ?? (provider as any)?.records ?? [];
-          items = Array.isArray(records) ? records : [];
+          items = this.extractProviderConversationItems(provider);
           lastError = null;
           break;
         } catch (error) {
@@ -403,5 +401,20 @@ export class EvolutionMessagesService {
       });
     }
     return items;
+  }
+
+  private extractProviderConversationItems(provider: unknown): any[] {
+    const p: any = provider ?? {};
+    const candidates = [
+      p?.messages?.records,
+      p?.messages,
+      p?.records,
+      p?.data,
+      p?.items
+    ];
+    for (const c of candidates) {
+      if (Array.isArray(c)) return c;
+    }
+    return [];
   }
 }
