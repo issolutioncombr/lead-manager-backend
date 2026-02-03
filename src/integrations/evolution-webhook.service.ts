@@ -471,6 +471,18 @@ export class EvolutionWebhookService {
     const keyId = data?.keyId ?? data?.key?.id ?? null;
     const remoteJid = data?.remoteJid ?? data?.key?.remoteJid ?? null;
     const status = data?.status ?? null;
+    const mapped =
+      typeof status === 'string'
+        ? (status.toUpperCase() === 'READ'
+            ? 'READ'
+            : status.toUpperCase() === 'DELIVERED' || status.toUpperCase() === 'DELIVERY_ACK' || status.toUpperCase() === 'SERVER_ACK'
+            ? 'DELIVERED'
+            : status.toUpperCase() === 'SENT'
+            ? 'SENT'
+            : status.toUpperCase() === 'FAILED'
+            ? 'FAILED'
+            : null)
+        : null;
     let userId: string | null = null;
     let instanceId: string | null = null;
     let providerInstanceId: string | null = null;
@@ -494,7 +506,7 @@ export class EvolutionWebhookService {
     if (keyId) {
       await (this.prisma as any).whatsappMessage.updateMany({
         where: { wamid: keyId },
-        data: { deliveryStatus: status ?? null, status: status ?? null }
+        data: { deliveryStatus: mapped ?? null, status: status ?? null }
       });
     }
     if (userId) {
