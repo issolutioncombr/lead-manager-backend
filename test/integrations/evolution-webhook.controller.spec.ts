@@ -8,6 +8,25 @@ describe('EvolutionWebhookController', () => {
     process.env = { ...originalEnv };
   });
 
+  it('rate limit retorna 429 após muitas requisições por token', async () => {
+    process.env.EVOLUTION_WEBHOOK_TOKEN = 'secret';
+    const svc = {
+      handleWebhook: jest.fn(async () => {}),
+      handleConnectionUpdate: jest.fn(async () => {}),
+      handleMessagesUpdate: jest.fn(async () => {}),
+      handleContactsUpdate: jest.fn(async () => {}),
+      handleChatsUpdate: jest.fn(async () => {}),
+      handleChatsUpsert: jest.fn(async () => {}),
+      dispatchByEvent: jest.fn(async () => {})
+    };
+    const controller = new EvolutionWebhookController(svc as any);
+
+    for (let i = 0; i < 10_000; i += 1) {
+      await controller.handleWebhook('secret', {});
+    }
+    await expect(controller.handleWebhook('secret', {})).rejects.toMatchObject({ status: 429 });
+  });
+
   afterAll(() => {
     process.env = originalEnv;
   });
@@ -47,4 +66,3 @@ describe('EvolutionWebhookController', () => {
     expect(svc.handleWebhook).toHaveBeenCalledTimes(1);
   });
 });
-

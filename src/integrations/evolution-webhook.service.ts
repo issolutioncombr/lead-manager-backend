@@ -543,49 +543,7 @@ export class EvolutionWebhookService {
       });
 
       if (updatedCount === 0 && keyId) {
-        let phoneRaw: string | null = null;
-        try {
-          const recent = await (this.prisma as any).webhook.findFirst({
-            where: {
-              providerInstanceId,
-              jsonrow: { path: ['remoteJid'], equals: remoteJid }
-            },
-            orderBy: { receivedAt: 'desc' },
-            select: { phoneRaw: true }
-          });
-          phoneRaw = recent?.phoneRaw ?? null;
-        } catch {
-          phoneRaw = null;
-        }
-        if (phoneRaw) {
-          const fromMeFlag = (data?.key?.fromMe ?? data?.fromMe ?? null);
-          const direction = fromMeFlag === null ? 'OUTBOUND' : (fromMeFlag ? 'OUTBOUND' : 'INBOUND');
-          await (this.prisma as any).whatsappMessage.upsert({
-            where: { wamid: keyId },
-            create: {
-              userId,
-              wamid: keyId,
-              remoteJid: remoteJid ?? `${phoneRaw}@s.whatsapp.net`,
-              remoteJidAlt: `${phoneRaw}@s.whatsapp.net`,
-              phoneRaw,
-              fromMe: fromMeFlag === null ? true : !!fromMeFlag,
-              direction,
-              timestamp: new Date(),
-              status: status ?? null,
-              deliveryStatus: mapped ?? null,
-              messageType: null,
-              conversation: null,
-              caption: null,
-              mediaUrl: null,
-              rawJson: this.redactSecrets(payload)
-            },
-            update: {
-              status: status ?? null,
-              deliveryStatus: mapped ?? null,
-              rawJson: this.redactSecrets(payload)
-            }
-          });
-        }
+        this.logger.warn(`messages.update sem match por wamid; keyId=${keyId} remoteJid=${remoteJid ?? 'null'}`);
       }
 
       const p = remoteJid ? this.normalizePhone(remoteJid) : null;
