@@ -57,7 +57,6 @@ export class EvolutionMessagesController {
   @Get('updates')
   async updates(
     @CurrentUser() user: AuthenticatedUser,
-    @Headers('x-request-id') requestId: string | undefined,
     @Query() query: EvolutionUpdatesQueryDto
   ) {
     return this.svc.listUpdates(user.userId, query.phone, {
