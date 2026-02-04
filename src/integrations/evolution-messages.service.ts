@@ -164,6 +164,10 @@ export class EvolutionMessagesService {
           lastError = error;
         }
       }
+      if (!lastError) {
+        const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
+        items = [...items, ...(Array.isArray(localItems) ? localItems : [])];
+      }
       if (lastError) {
         const status = lastError instanceof HttpException ? lastError.getStatus() : null;
         this.logger.warn(
@@ -207,6 +211,10 @@ export class EvolutionMessagesService {
         if (seenIds.has(key)) return false;
         seenIds.add(key);
         return true;
+      })
+      .filter((entry: any) => {
+        const hasContent = !!(entry.conversation || entry.caption || entry.mediaUrl || entry.messageType);
+        return hasContent;
       })
       .filter((entry: any) => (opts?.direction === 'inbound' ? !entry.fromMe : opts?.direction === 'outbound' ? entry.fromMe : true));
     data.sort((a: any, b: any) => {
@@ -278,7 +286,7 @@ export class EvolutionMessagesService {
       updatedAt: m.updatedAt instanceof Date ? m.updatedAt.toISOString() : new Date(m.updatedAt).toISOString(),
       pushName: m.pushName ?? null,
       phoneRaw: normalized
-    }));
+    })).filter((entry: any) => !!(entry.conversation || entry.caption || entry.mediaUrl || entry.messageType));
 
     const lastTimestamp = data.length ? data[data.length - 1].timestamp : (afterTimestamp ? afterTimestamp.toISOString() : new Date(0).toISOString());
     const lastUpdatedAt = data.reduce((acc: string, it: any) => (it.updatedAt > acc ? it.updatedAt : acc), afterUpdatedAt ? afterUpdatedAt.toISOString() : new Date(0).toISOString());
