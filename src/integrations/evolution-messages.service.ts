@@ -154,26 +154,31 @@ export class EvolutionMessagesService {
           const token = await this.resolveToken(userId, instanceId);
           let provider: any = null;
           const remoteJid = `${normalized}@s.whatsapp.net`;
+          const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
           try {
             provider = await this.evolution.findMessages({
-              instanceId,
+              instanceId: providerInstanceName,
               where: { key: { remoteJid } },
               limit,
               token: token ?? undefined
             });
           } catch (e) {
             provider = await this.evolution.getConversation(`+${normalized}`, {
-              instanceId,
+              instanceId: providerInstanceName,
               limit,
               token: token ?? undefined
             });
           }
-          items = this.extractProviderConversationItems(provider);
+          const got = this.extractProviderConversationItems(provider);
+          items = [...items, ...(Array.isArray(got) ? got : [])];
           lastError = null;
-          break;
+          if (opts?.instanceId) break;
         } catch (error) {
           lastError = error;
         }
+      }
+      if (!opts?.instanceId && items.length) {
+        lastError = null;
       }
       if (!lastError) {
         const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
@@ -325,24 +330,29 @@ export class EvolutionMessagesService {
       for (const instanceId of instanceCandidates) {
         try {
           const token = await this.resolveToken(userId, instanceId);
+          const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
           let provider: any = null;
           try {
-            provider = await this.evolution.findChats({ instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
+            provider = await this.evolution.findChats({ instanceId: providerInstanceName, limit: opts?.limit ?? 100, token: token ?? undefined });
           } catch (e) {
-            provider = await this.evolution.listChats({ instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
+            provider = await this.evolution.listChats({ instanceId: providerInstanceName, limit: opts?.limit ?? 100, token: token ?? undefined });
           }
-          items = Array.isArray((provider as any)?.chats)
+          const got = Array.isArray((provider as any)?.chats)
             ? (provider as any).chats
             : Array.isArray((provider as any)?.data)
             ? (provider as any).data
             : Array.isArray(provider)
             ? provider
             : (provider as any)?.records ?? [];
+          items = [...items, ...(Array.isArray(got) ? got : [])];
           lastError = null;
-          break;
+          if (opts?.instanceId) break;
         } catch (error) {
           lastError = error;
         }
+      }
+      if (!opts?.instanceId && items.length) {
+        lastError = null;
       }
       if (lastError) {
         const status = lastError instanceof HttpException ? lastError.getStatus() : null;
@@ -455,12 +465,17 @@ export class EvolutionMessagesService {
       });
       return this.uniqueStrings([requested, record?.instanceId, record?.providerInstanceId]);
     }
-    const record = await (this.prisma as any).evolutionInstance.findFirst({
+    const records = await (this.prisma as any).evolutionInstance.findMany({
       where: { userId },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ updatedAt: 'desc' }],
       select: { instanceId: true, providerInstanceId: true }
     });
-    return this.uniqueStrings([record?.instanceId, record?.providerInstanceId]);
+    const values: Array<string | null | undefined> = [];
+    for (const r of records ?? []) {
+      values.push(r?.instanceId);
+      values.push(r?.providerInstanceId);
+    }
+    return this.uniqueStrings(values);
   }
 
   private async readLocalConversationAsProviderItems(userId: string, normalizedPhone: string, limit: number): Promise<any[]> {

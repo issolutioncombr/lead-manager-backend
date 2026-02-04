@@ -55,6 +55,7 @@ export class EvolutionService {
   private readonly defaultChannel?: string;
   private readonly defaultToken?: string;
   private discoveredPaths?: { chats?: string; conversation?: string };
+  private readonly instanceNameCache = new Map<string, { value: string; expiresAt: number }>();
   private readonly isMock: boolean = false;
 
   constructor(private readonly configService: ConfigService) {
@@ -199,6 +200,23 @@ export class EvolutionService {
     );
 
     return match ?? null;
+  }
+
+  async resolveInstanceName(identifier: string): Promise<string> {
+    const key = (identifier ?? '').trim();
+    if (!key) return identifier;
+    const now = Date.now();
+    const cached = this.instanceNameCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.value;
+    try {
+      const summary = await this.fetchInstance(key, key);
+      const resolved = (summary?.instanceName ?? summary?.name ?? key).trim() || key;
+      this.instanceNameCache.set(key, { value: resolved, expiresAt: now + 60_000 });
+      return resolved;
+    } catch {
+      this.instanceNameCache.set(key, { value: key, expiresAt: now + 10_000 });
+      return key;
+    }
   }
 
   async delete(instanceId: string) {
