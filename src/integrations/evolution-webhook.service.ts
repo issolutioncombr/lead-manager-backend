@@ -154,6 +154,7 @@ export class EvolutionWebhookService {
     // 3. Extrair dados da mensagem
     const wamid = key.id;
     const remoteJid = key.remoteJid;
+    const remoteJidAlt = key.remoteJidAlt ?? null;
     const fromMe = key.fromMe;
     
     // Extração do texto (conversation)
@@ -235,7 +236,7 @@ export class EvolutionWebhookService {
           userId,
           wamid,
           remoteJid,
-          remoteJidAlt: remoteJid,
+          remoteJidAlt: remoteJidAlt ?? remoteJid,
           phoneRaw,
           fromMe,
           direction,
@@ -254,6 +255,7 @@ export class EvolutionWebhookService {
         update: {
           fromMe,
           direction,
+          remoteJidAlt: remoteJidAlt ?? remoteJid,
           messageType: resolvedMessageType ?? null,
           conversation: conversationText ?? null,
           caption: mediaCaption,
@@ -756,7 +758,8 @@ export class EvolutionWebhookService {
     const jid = key?.remoteJid ?? '';
     const alt = key?.remoteJidAlt ?? '';
     const candidate = (String(jid).includes('@lid') || addressingMode === 'lid') ? (alt || jid) : jid;
-    const normalized = String(candidate).replace('@s.whatsapp.net', '').replace(/\D/g, '');
+    const left = String(candidate).split('@')[0];
+    const normalized = left.replace(/\D/g, '');
     return normalized || null;
   }
 }
