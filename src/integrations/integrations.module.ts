@@ -18,6 +18,7 @@ import { EvolutionWebhookController } from './evolution-webhook.controller';
 import { EvolutionWebhookService } from './evolution-webhook.service';
 import { EvolutionMessagesController } from './evolution-messages.controller';
 import { EvolutionMessagesService } from './evolution-messages.service';
+import { MessageEventsService } from './message-events.service';
 import { paypalConfig } from './paypal.config';
 import { PaypalOAuthService } from './paypal-oauth.service';
 import { PaypalOAuthController } from './paypal-oauth.controller';
@@ -50,7 +51,8 @@ import { PaypalTransactionsController } from './paypal-transactions.controller';
     EvolutionService,
     EvolutionIntegrationService,
     EvolutionWebhookService,
-    EvolutionMessagesService
+    EvolutionMessagesService,
+    MessageEventsService
   ],
   exports: [
     PaypalOAuthService,
@@ -58,7 +60,8 @@ import { PaypalTransactionsController } from './paypal-transactions.controller';
     EvolutionService,
     EvolutionIntegrationService,
     EvolutionWebhookService,
-    EvolutionMessagesService
+    EvolutionMessagesService,
+    MessageEventsService
   ]
 })
 export class IntegrationsModule {}

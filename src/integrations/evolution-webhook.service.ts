@@ -2,12 +2,16 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import https from 'node:https';
+import { MessageEventsService } from './message-events.service';
 
 @Injectable()
 export class EvolutionWebhookService {
   private readonly logger = new Logger(EvolutionWebhookService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly events: MessageEventsService
+  ) {}
 
   async handleConnectionUpdate(payload: any) {
     const instanceName = payload?.instance ?? null;
@@ -258,6 +262,15 @@ export class EvolutionWebhookService {
           rawJson: this.redactSecrets(payload)
         }
       });
+
+      if (phoneRaw) {
+        this.events.emit({
+          userId,
+          phoneRaw,
+          event: 'messages.upsert',
+          wamid
+        });
+      }
 
       const n8nUrl = (process.env.N8N_WEBHOOK_URL ?? '').trim();
       if (n8nUrl) {
@@ -573,6 +586,16 @@ export class EvolutionWebhookService {
             }
           });
         }
+      }
+
+      const p = remoteJid ? this.normalizePhone(remoteJid) : null;
+      if (p) {
+        this.events.emit({
+          userId,
+          phoneRaw: p,
+          event: 'messages.update',
+          wamid: keyId
+        });
       }
     }
   }

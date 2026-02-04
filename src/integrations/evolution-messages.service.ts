@@ -2,6 +2,7 @@ import { BadRequestException, HttpException, Injectable, Logger } from '@nestjs/
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvolutionService } from './evolution.service';
+import { MessageEventsService } from './message-events.service';
 
 function normalizePhone(phone: string): string {
   const d = phone.replace(/\D+/g, '');
@@ -12,7 +13,29 @@ function normalizePhone(phone: string): string {
 export class EvolutionMessagesService {
   private readonly logger = new Logger(EvolutionMessagesService.name);
   private readonly buckets = new Map<string, { count: number; resetAt: number }>();
-  constructor(private readonly prisma: PrismaService, private readonly evolution: EvolutionService) {}
+  private readonly chatsCache = new Map<string, { expiresAt: number; items: any[] }>();
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly evolution: EvolutionService,
+    private readonly events: MessageEventsService
+  ) {}
+
+  private maskPhone(phoneRaw: string) {
+    const digits = String(phoneRaw ?? '').replace(/\D+/g, '');
+    if (digits.length < 4) return 'invalid';
+    return `${digits.slice(0, 2)}*****${digits.slice(-2)}`;
+  }
+
+  private async readLocalChatsCached(userId: string, limit: number): Promise<any[]> {
+    const normalizedLimit = Math.max(10, Math.min(500, limit));
+    const key = `${userId}:${normalizedLimit}`;
+    const now = Date.now();
+    const cached = this.chatsCache.get(key);
+    if (cached && cached.expiresAt > now) return cached.items;
+    const items = await this.readLocalChatsAsProviderItems(userId, normalizedLimit);
+    this.chatsCache.set(key, { expiresAt: now + 3000, items });
+    return items;
+  }
 
   async sendMessage(userId: string, payload: {
     phone: string;
@@ -68,6 +91,7 @@ export class EvolutionMessagesService {
       create: record,
       update: record
     });
+    this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
     if (payload.mediaUrl) {
       const ok = await this.validateMedia(payload.mediaUrl);
       if (!ok) {
@@ -91,12 +115,20 @@ export class EvolutionMessagesService {
         where: { wamid },
         data: { deliveryStatus: 'SENT', rawJson: { ...(record.rawJson ?? {}), providerResp } }
       });
+      this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
+      this.logger.log(
+        `sendMessage ok userId=${userId} instanceId=${payload.instanceId ?? 'auto'} phone=${this.maskPhone(normalized)} wamid=${wamid} status=SENT`
+      );
       return { id: wamid, status: 'sent' };
     } catch {
       await (this.prisma as any).whatsappMessage.update({
         where: { wamid },
         data: { deliveryStatus: 'FAILED' }
       });
+      this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
+      this.logger.warn(
+        `sendMessage failed userId=${userId} instanceId=${payload.instanceId ?? 'auto'} phone=${this.maskPhone(normalized)} wamid=${wamid} status=FAILED`
+      );
       return { id: wamid, status: 'failed' };
     }
   }
@@ -116,6 +148,7 @@ export class EvolutionMessagesService {
     if (useProvider) {
       let lastError: unknown = null;
       const instanceCandidates = await this.resolveInstanceCandidates(userId, opts?.instanceId);
+      const startedAt = Date.now();
       for (const instanceId of instanceCandidates) {
         try {
           const token = await this.resolveToken(userId, instanceId);
@@ -134,7 +167,7 @@ export class EvolutionMessagesService {
       if (lastError) {
         const status = lastError instanceof HttpException ? lastError.getStatus() : null;
         this.logger.warn(
-          `Falha ao ler conversa no provider; usando fallback local. phone=${normalized} instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'}`
+          `Falha ao ler conversa no provider; usando fallback local. userId=${userId} phone=${this.maskPhone(normalized)} instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'} durationMs=${Date.now() - startedAt}`
         );
         items = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
       }
@@ -182,52 +215,6 @@ export class EvolutionMessagesService {
       return ta - tb;
     });
     // Provider response may not support pagination; return current slice
-    return { data, total: data.length, page: 1, limit };
-  }
-
-  async listConversationPublic(phone: string, opts?: { limit?: number }) {
-    const normalized = normalizePhone(phone);
-    const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
-    const local = await (this.prisma as any).whatsappMessage.findMany({
-      where: { phoneRaw: normalized },
-      orderBy: { timestamp: 'desc' },
-      take: limit
-    });
-    local.reverse();
-    const items = Array.isArray(local) ? local.map((m: any) => ({
-      id: m.wamid ?? `${normalized}-${m.timestamp?.getTime?.() ?? Date.now()}`,
-      key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
-      message: m.mediaUrl
-        ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
-        : { conversation: m.conversation ?? null },
-      messageType: m.messageType ?? (m.mediaUrl ? 'media' : (m.conversation ? 'text' : null)),
-      deliveryStatus: m.deliveryStatus ?? null,
-      messageTimestamp: Math.floor((m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000),
-      pushName: m.pushName ?? null
-    })) : [];
-    const data = items.map((m: any) => {
-      const key = m?.key ?? {};
-      const msg = m?.message ?? {};
-      const fromMe = !!key.fromMe;
-      const text = msg?.conversation ?? msg?.extendedTextMessage?.text ?? msg?.imageMessage?.caption ?? null;
-      const mediaUrl = msg?.imageMessage?.url ?? msg?.videoMessage?.url ?? msg?.documentMessage?.url ?? null;
-      const type = m?.messageType ?? (mediaUrl ? 'media' : (text ? 'text' : null));
-      const ts = m?.messageTimestamp ?? m?.timestamp ?? Date.now() / 1000;
-      return {
-        id: m?.id ?? key?.id ?? m?.wamid ?? `${normalized}-${ts}`,
-        wamid: key?.id ?? m?.wamid ?? null,
-        fromMe,
-        direction: fromMe ? 'OUTBOUND' : 'INBOUND',
-        conversation: text,
-        caption: msg?.imageMessage?.caption ?? msg?.videoMessage?.caption ?? msg?.documentMessage?.caption ?? null,
-        mediaUrl,
-        messageType: type,
-        deliveryStatus: m?.deliveryStatus ?? null,
-        timestamp: new Date((Number(ts) || Math.floor(Date.now() / 1000)) * 1000),
-        pushName: m?.pushName ?? m?.name ?? null,
-        phoneRaw: normalized
-      };
-    });
     return { data, total: data.length, page: 1, limit };
   }
 
@@ -315,6 +302,7 @@ export class EvolutionMessagesService {
     if (useProvider) {
       let lastError: unknown = null;
       const instanceCandidates = await this.resolveInstanceCandidates(userId, opts?.instanceId);
+      const startedAt = Date.now();
       for (const instanceId of instanceCandidates) {
         try {
           const token = await this.resolveToken(userId, instanceId);
@@ -329,12 +317,12 @@ export class EvolutionMessagesService {
       if (lastError) {
         const status = lastError instanceof HttpException ? lastError.getStatus() : null;
         this.logger.warn(
-          `Falha ao listar chats no provider; usando fallback local. instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'}`
+          `Falha ao listar chats no provider; usando fallback local. userId=${userId} instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'} durationMs=${Date.now() - startedAt}`
         );
-        items = await this.readLocalChatsAsProviderItems(userId, opts?.limit ?? 100);
+        items = await this.readLocalChatsCached(userId, opts?.limit ?? 100);
       }
     } else {
-      items = await this.readLocalChatsAsProviderItems(userId, opts?.limit ?? 100);
+      items = await this.readLocalChatsCached(userId, opts?.limit ?? 100);
     }
     const data = items
       .map((c: any) => {
@@ -343,14 +331,39 @@ export class EvolutionMessagesService {
         const last = c?.lastMessage ?? c?.message ?? {};
         const lastText = last?.conversation ?? last?.message?.conversation ?? last?.extendedTextMessage?.text ?? last?.imageMessage?.caption ?? null;
         const lastTs = last?.messageTimestamp ?? last?.timestamp ?? c?.timestamp ?? null;
+        const tsIso = (() => {
+          if (!lastTs) return null;
+          const n = Number(lastTs);
+          if (Number.isFinite(n) && n > 0) {
+            const ms = n > 10_000_000_000 ? n : n * 1000;
+            const dt = new Date(ms);
+            return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+          }
+          const dt = new Date(String(lastTs));
+          return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
+        })();
         return {
           id: c?.id ?? normalized ?? Math.random().toString(36).slice(2),
           name: c?.pushName ?? c?.name ?? null,
           contact: normalized,
-          lastMessage: lastText ? { text: lastText, timestamp: lastTs ? new Date(Number(lastTs) * 1000).toISOString() : new Date().toISOString(), fromMe: !!(last?.key?.fromMe) } : null
+          lastMessage: lastText ? { text: lastText, timestamp: tsIso ?? new Date().toISOString(), fromMe: !!(last?.key?.fromMe) } : null
         };
       })
       .filter((x: any) => !!x.contact);
+    const contacts = data.map((d: any) => d.contact).filter(Boolean);
+    if (contacts.length) {
+      const leads = await (this.prisma as any).lead.findMany({
+        where: { userId, contact: { in: contacts } },
+        select: { contact: true, name: true }
+      });
+      const nameByContact = new Map<string, string>();
+      for (const l of leads ?? []) {
+        const c = typeof l?.contact === 'string' ? l.contact.replace(/\D+/g, '') : null;
+        const n = typeof l?.name === 'string' ? l.name.trim() : '';
+        if (c && n) nameByContact.set(c, n);
+      }
+      return data.map((d: any) => ({ ...d, name: nameByContact.get(d.contact) ?? d.name }));
+    }
     return data;
   }
 

@@ -636,6 +636,8 @@ model WhatsappMessage {
 
   @@index([userId])
   @@index([userId, phoneRaw])
+  @@index([userId, phoneRaw, timestamp])
+  @@index([userId, phoneRaw, updatedAt])
   @@index([remoteJid])
   @@index([timestamp])
   @@index([createdAt])
