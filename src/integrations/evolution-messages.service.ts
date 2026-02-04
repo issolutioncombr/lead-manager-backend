@@ -366,8 +366,10 @@ export class EvolutionMessagesService {
     }
     const dataRaw = items
       .map((c: any) => {
-        const phone = (c?.remoteJid ?? c?.jid ?? '').replace('@s.whatsapp.net', '') || c?.phoneRaw || null;
-        const normalized = phone ? phone.replace(/\D+/g, '') : null;
+        const jidRaw = String(c?.remoteJid ?? c?.jid ?? c?.phoneRaw ?? '');
+        const left = jidRaw.includes('@') ? jidRaw.split('@')[0] : jidRaw;
+        const normalized = left ? left.replace(/\D+/g, '') : null;
+        if (!normalized || normalized.length < 7 || normalized.length > 15) return null;
         const last = c?.lastMessage ?? c?.message ?? {};
         const lastText = last?.conversation ?? last?.message?.conversation ?? last?.extendedTextMessage?.text ?? last?.imageMessage?.caption ?? null;
         const lastTs = last?.messageTimestamp ?? last?.timestamp ?? c?.timestamp ?? null;
@@ -389,10 +391,11 @@ export class EvolutionMessagesService {
           lastMessage: lastText ? { text: lastText, timestamp: tsIso ?? new Date().toISOString(), fromMe: !!(last?.key?.fromMe) } : null
         };
       })
-      .filter((x: any) => !!x.contact);
+      .filter((x: any) => !!x?.contact);
 
     const byContact = new Map<string, any>();
     for (const row of dataRaw) {
+      if (!row) continue;
       const prev = byContact.get(row.contact);
       if (!prev) {
         byContact.set(row.contact, row);
