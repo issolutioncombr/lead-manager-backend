@@ -253,6 +253,18 @@ export class EvolutionService {
     return this.request<any>(path, { method: 'GET' });
   }
 
+  async findChats(opts: { instanceId: string; where?: Record<string, any>; limit?: number; token?: string }) {
+    const body: Record<string, any> = {
+      where: opts.where ?? {},
+      limit: opts.limit ?? 100
+    };
+    if (opts.token) body.token = opts.token;
+    return this.request<any>(`/chat/findChats/${opts.instanceId}`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+
   async findMessages(opts: { instanceId: string; where: Record<string, any>; limit?: number; token?: string }) {
     const body: Record<string, any> = {
       where: opts.where,

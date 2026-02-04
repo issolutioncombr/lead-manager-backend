@@ -152,11 +152,22 @@ export class EvolutionMessagesService {
       for (const instanceId of instanceCandidates) {
         try {
           const token = await this.resolveToken(userId, instanceId);
-          const provider = await this.evolution.getConversation(`+${normalized}`, {
-            instanceId,
-            limit,
-            token: token ?? undefined
-          });
+          let provider: any = null;
+          const remoteJid = `${normalized}@s.whatsapp.net`;
+          try {
+            provider = await this.evolution.findMessages({
+              instanceId,
+              where: { key: { remoteJid } },
+              limit,
+              token: token ?? undefined
+            });
+          } catch (e) {
+            provider = await this.evolution.getConversation(`+${normalized}`, {
+              instanceId,
+              limit,
+              token: token ?? undefined
+            });
+          }
           items = this.extractProviderConversationItems(provider);
           lastError = null;
           break;
@@ -314,8 +325,19 @@ export class EvolutionMessagesService {
       for (const instanceId of instanceCandidates) {
         try {
           const token = await this.resolveToken(userId, instanceId);
-          const provider = await this.evolution.listChats({ instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
-          items = Array.isArray((provider as any)?.chats) ? (provider as any).chats : (provider as any)?.data ?? [];
+          let provider: any = null;
+          try {
+            provider = await this.evolution.findChats({ instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
+          } catch (e) {
+            provider = await this.evolution.listChats({ instanceId, limit: opts?.limit ?? 100, token: token ?? undefined });
+          }
+          items = Array.isArray((provider as any)?.chats)
+            ? (provider as any).chats
+            : Array.isArray((provider as any)?.data)
+            ? (provider as any).data
+            : Array.isArray(provider)
+            ? provider
+            : (provider as any)?.records ?? [];
           lastError = null;
           break;
         } catch (error) {
