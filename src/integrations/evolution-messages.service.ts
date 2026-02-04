@@ -364,7 +364,7 @@ export class EvolutionMessagesService {
     } else {
       items = await this.readLocalChatsCached(userId, opts?.limit ?? 100);
     }
-    const data = items
+    const dataRaw = items
       .map((c: any) => {
         const phone = (c?.remoteJid ?? c?.jid ?? '').replace('@s.whatsapp.net', '') || c?.phoneRaw || null;
         const normalized = phone ? phone.replace(/\D+/g, '') : null;
@@ -390,6 +390,27 @@ export class EvolutionMessagesService {
         };
       })
       .filter((x: any) => !!x.contact);
+
+    const byContact = new Map<string, any>();
+    for (const row of dataRaw) {
+      const prev = byContact.get(row.contact);
+      if (!prev) {
+        byContact.set(row.contact, row);
+        continue;
+      }
+      const a = prev?.lastMessage?.timestamp ? new Date(prev.lastMessage.timestamp).getTime() : 0;
+      const b = row?.lastMessage?.timestamp ? new Date(row.lastMessage.timestamp).getTime() : 0;
+      if ((Number.isFinite(b) ? b : 0) >= (Number.isFinite(a) ? a : 0)) {
+        byContact.set(row.contact, row);
+      }
+    }
+    const data = Array.from(byContact.values());
+    data.sort((a: any, b: any) => {
+      const ta = a?.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0;
+      const tb = b?.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0;
+      return tb - ta;
+    });
+
     const contacts = data.map((d: any) => d.contact).filter(Boolean);
     if (contacts.length) {
       const leads = await (this.prisma as any).lead.findMany({

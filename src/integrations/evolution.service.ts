@@ -56,6 +56,7 @@ export class EvolutionService {
   private readonly defaultToken?: string;
   private discoveredPaths?: { chats?: string; conversation?: string };
   private readonly instanceNameCache = new Map<string, { value: string; expiresAt: number }>();
+  private readonly instancesCache = new Map<string, { value: EvolutionInstanceSummary[]; expiresAt: number }>();
   private readonly isMock: boolean = false;
 
   constructor(private readonly configService: ConfigService) {
@@ -202,6 +203,16 @@ export class EvolutionService {
     return match ?? null;
   }
 
+  private async fetchInstancesCached(): Promise<EvolutionInstanceSummary[]> {
+    const now = Date.now();
+    const cached = this.instancesCache.get('all');
+    if (cached && cached.expiresAt > now) return cached.value;
+    const instances = await this.request<EvolutionInstanceSummary[]>('/instance/fetchInstances', { method: 'GET' });
+    const list = Array.isArray(instances) ? instances : [];
+    this.instancesCache.set('all', { value: list, expiresAt: now + 60_000 });
+    return list;
+  }
+
   async resolveInstanceName(identifier: string): Promise<string> {
     const key = (identifier ?? '').trim();
     if (!key) return identifier;
@@ -209,7 +220,15 @@ export class EvolutionService {
     const cached = this.instanceNameCache.get(key);
     if (cached && cached.expiresAt > now) return cached.value;
     try {
-      const summary = await this.fetchInstance(key, key);
+      const list = await this.fetchInstancesCached();
+      const summary =
+        list.find(
+          (instance) =>
+            instance.name === key ||
+            instance.id === key ||
+            instance.instanceName === key ||
+            instance.token === key
+        ) ?? null;
       const resolved = (summary?.instanceName ?? summary?.name ?? key).trim() || key;
       this.instanceNameCache.set(key, { value: resolved, expiresAt: now + 60_000 });
       return resolved;
