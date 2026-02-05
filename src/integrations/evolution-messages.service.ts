@@ -133,7 +133,7 @@ export class EvolutionMessagesService {
     }
   }
 
-  async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string; source?: 'provider' | 'local' }) {
+  async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string; remoteJid?: string; source?: 'provider' | 'local' }) {
     const normalized = normalizePhone(phone);
     if (!normalized || normalized.length < 7) {
       throw new BadRequestException('Telefone inválido');
@@ -153,7 +153,7 @@ export class EvolutionMessagesService {
         try {
           const token = await this.resolveToken(userId, instanceId);
           let provider: any = null;
-          const remoteJid = `${normalized}@s.whatsapp.net`;
+          const remoteJid = (opts?.remoteJid ?? `${normalized}@s.whatsapp.net`).trim();
           const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
           try {
             provider = await this.evolution.findMessages({
@@ -373,6 +373,7 @@ export class EvolutionMessagesService {
         const last = c?.lastMessage ?? c?.message ?? {};
         const lastText = last?.conversation ?? last?.message?.conversation ?? last?.extendedTextMessage?.text ?? last?.imageMessage?.caption ?? null;
         const lastTs = last?.messageTimestamp ?? last?.timestamp ?? c?.timestamp ?? null;
+        const remoteJid = String(c?.remoteJid ?? c?.jid ?? '').trim() || (normalized ? `${normalized}@s.whatsapp.net` : '');
         const tsIso = (() => {
           if (!lastTs) return null;
           const n = Number(lastTs);
@@ -388,6 +389,7 @@ export class EvolutionMessagesService {
           id: c?.id ?? normalized ?? Math.random().toString(36).slice(2),
           name: c?.pushName ?? c?.name ?? null,
           contact: normalized,
+          remoteJid,
           lastMessage: lastText ? { text: lastText, timestamp: tsIso ?? new Date().toISOString(), fromMe: !!(last?.key?.fromMe) } : null
         };
       })

@@ -39,6 +39,7 @@ export class EvolutionMessagesController {
       page: query.page,
       limit: query.limit,
       instanceId: query.instanceId,
+      remoteJid: query.remoteJid,
       source: query.source
     });
   }

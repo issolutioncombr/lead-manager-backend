@@ -11,6 +11,10 @@ export class EvolutionConversationQueryDto {
   instanceId?: string;
 
   @IsOptional()
+  @IsString()
+  remoteJid?: string;
+
+  @IsOptional()
   @IsIn(['inbound', 'outbound'])
   direction?: 'inbound' | 'outbound';
 
