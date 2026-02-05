@@ -464,16 +464,16 @@ export class EvolutionIntegrationService {
 
     const metadataPatch: JsonObject = {
       lastState: providerState,
-      connectionStatus: summary?.connectionStatus ?? null,
-      ownerJid: summary?.ownerJid ?? null,
-      profileName: summary?.profileName ?? null,
-      profilePicUrl: summary?.profilePicUrl ?? null,
       providerId: summary?.id ?? providerInstanceId ?? null,
       lastStatusAt: new Date().toISOString()
     };
     if (summaryNumber) {
       metadataPatch.number = summaryNumber;
     }
+    if (summary?.connectionStatus) metadataPatch.connectionStatus = summary.connectionStatus;
+    if (summary?.ownerJid) metadataPatch.ownerJid = summary.ownerJid;
+    if (summary?.profileName) metadataPatch.profileName = summary.profileName;
+    if (summary?.profilePicUrl) metadataPatch.profilePicUrl = summary.profilePicUrl;
 
     const qr = await this.fetchQr(instance, summary?.id ?? providerInstanceId ?? null, phoneNumber ?? summaryNumber ?? null);
 
@@ -525,10 +525,10 @@ export class EvolutionIntegrationService {
       connectedAt,
       metadata: {
         lastState: providerState,
-        connectionStatus: summary?.connectionStatus ?? null,
-        ownerJid: summary?.ownerJid ?? null,
-        profileName: summary?.profileName ?? null,
-        profilePicUrl: summary?.profilePicUrl ?? null,
+        ...(summary?.connectionStatus ? { connectionStatus: summary.connectionStatus } : {}),
+        ...(summary?.ownerJid ? { ownerJid: summary.ownerJid } : {}),
+        ...(summary?.profileName ? { profileName: summary.profileName } : {}),
+        ...(summary?.profilePicUrl ? { profilePicUrl: summary.profilePicUrl } : {}),
         ...(summaryNumber ? { number: summaryNumber } : {}),
         providerId: summary?.id ?? providerInstanceId ?? null,
         lastStatusAt: new Date().toISOString()

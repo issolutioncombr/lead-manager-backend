@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
 interface CreateInstanceResponse {
@@ -259,25 +259,27 @@ export class EvolutionService {
     number: string;
     text?: string;
     mediaUrl?: string;
+    mediaType?: string;
     caption?: string;
     token?: string | null;
   }): Promise<{ id?: string; message?: string; status?: string }> {
+    const instanceId = (payload.instanceId ?? '').trim();
+    if (!instanceId) {
+      throw new BadRequestException('instanceId é obrigatório para envio');
+    }
+    const instanceKey = await this.resolveInstanceName(instanceId);
+    const base = `/message/${payload.mediaUrl ? 'sendMedia' : 'sendText'}/${encodeURIComponent(instanceKey)}`;
     const body: Record<string, unknown> = {
-      number: payload.number,
-      token: payload.token ?? this.defaultToken ?? null
+      number: payload.number
     };
-    if (payload.text) body.text = payload.text;
-    if (payload.mediaUrl) body.mediaUrl = payload.mediaUrl;
-    if (payload.caption) body.caption = payload.caption;
-    if (payload.instanceId) body.instanceId = payload.instanceId;
-
-    return this.request<{ id?: string; message?: string; status?: string }>(
-      '/messages/send',
-      {
-        method: 'POST',
-        body: JSON.stringify(body)
-      }
-    );
+    if (payload.mediaUrl) {
+      body.mediaUrl = payload.mediaUrl;
+      body.mediaType = payload.mediaType ?? 'document';
+      if (payload.caption) body.caption = payload.caption;
+    } else {
+      body.text = payload.text ?? '';
+    }
+    return this.request<any>(base, { method: 'POST', body: JSON.stringify(body) });
   }
 
   async getConversation(number: string, opts?: { limit?: number; cursor?: string; token?: string; instanceId?: string }) {

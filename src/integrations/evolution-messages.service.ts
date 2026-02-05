@@ -92,45 +92,64 @@ export class EvolutionMessagesService {
       update: record
     });
     this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
+    let mediaType: string | undefined = undefined;
     if (payload.mediaUrl) {
-      const ok = await this.validateMedia(payload.mediaUrl);
-      if (!ok) {
+      const media = await this.validateMedia(payload.mediaUrl);
+      if (!media.ok) {
         await (this.prisma as any).whatsappMessage.update({
           where: { wamid },
           data: { deliveryStatus: 'FAILED' }
         });
         throw new BadRequestException('Mídia inválida ou muito grande');
       }
+      mediaType = media.mediaType;
     }
 
-    try {
+    const instanceCandidates = await this.resolveInstanceCandidates(userId, payload.instanceId);
+    let lastError: unknown = null;
+    const sendWith = async (instanceId: string | null) => {
       const providerResp = await this.evolution.sendMessage({
-        instanceId: payload.instanceId ?? null,
+        instanceId,
         number: `+${normalized}`,
         text: payload.text,
         mediaUrl: payload.mediaUrl,
+        mediaType,
         caption: payload.caption
       });
       await (this.prisma as any).whatsappMessage.update({
         where: { wamid },
-        data: { deliveryStatus: 'SENT', rawJson: { ...(record.rawJson ?? {}), providerResp } }
+        data: { deliveryStatus: 'SENT', rawJson: { ...(record.rawJson ?? {}), providerResp, instanceId } }
       });
       this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
       this.logger.log(
         `sendMessage ok userId=${userId} instanceId=${payload.instanceId ?? 'auto'} phone=${this.maskPhone(normalized)} wamid=${wamid} status=SENT`
       );
-      return { id: wamid, status: 'sent' };
-    } catch {
-      await (this.prisma as any).whatsappMessage.update({
-        where: { wamid },
-        data: { deliveryStatus: 'FAILED' }
-      });
-      this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
-      this.logger.warn(
-        `sendMessage failed userId=${userId} instanceId=${payload.instanceId ?? 'auto'} phone=${this.maskPhone(normalized)} wamid=${wamid} status=FAILED`
-      );
-      return { id: wamid, status: 'failed' };
+      return { id: wamid, status: 'sent' as const };
+    };
+    if (!instanceCandidates.length) {
+      try {
+        return await sendWith(payload.instanceId ?? null);
+      } catch (error) {
+        lastError = error;
+      }
+    } else {
+      for (const instanceId of instanceCandidates) {
+        try {
+          return await sendWith(instanceId);
+        } catch (error) {
+          lastError = error;
+        }
+      }
     }
+    await (this.prisma as any).whatsappMessage.update({
+      where: { wamid },
+      data: { deliveryStatus: 'FAILED', rawJson: { ...(record.rawJson ?? {}), providerError: String((lastError as any)?.message ?? lastError ?? '') } }
+    });
+    this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
+    this.logger.warn(
+      `sendMessage failed userId=${userId} instanceId=${payload.instanceId ?? 'auto'} phone=${this.maskPhone(normalized)} wamid=${wamid} status=FAILED`
+    );
+    return { id: wamid, status: 'failed' };
   }
 
   async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string; remoteJid?: string; source?: 'provider' | 'local' }) {
@@ -433,17 +452,22 @@ export class EvolutionMessagesService {
     return data;
   }
 
-  private async validateMedia(url: string): Promise<boolean> {
+  private async validateMedia(url: string): Promise<{ ok: boolean; mediaType: 'image' | 'video' | 'document' }> {
     try {
       const resp = await fetch(url, { method: 'HEAD' });
-      if (!resp.ok) return false;
+      if (!resp.ok) return { ok: false, mediaType: 'document' };
       const type = resp.headers.get('content-type') || '';
       const len = parseInt(resp.headers.get('content-length') || '0', 10);
       const allowed = type.startsWith('image/') || type.startsWith('application/') || type.startsWith('video/');
       const max = 10 * 1024 * 1024;
-      return allowed && (!len || len <= max);
+      const mediaType = type.startsWith('image/')
+        ? 'image'
+        : type.startsWith('video/')
+          ? 'video'
+          : 'document';
+      return { ok: allowed && (!len || len <= max), mediaType };
     } catch {
-      return false;
+      return { ok: false, mediaType: 'document' };
     }
   }
 
@@ -491,17 +515,26 @@ export class EvolutionMessagesService {
       });
       return this.uniqueStrings([requested, record?.instanceId, record?.providerInstanceId]);
     }
-    const records = await (this.prisma as any).evolutionInstance.findMany({
+    const model = (this.prisma as any).evolutionInstance;
+    if (typeof model?.findMany === 'function') {
+      const records = await model.findMany({
+        where: { userId },
+        orderBy: [{ updatedAt: 'desc' }],
+        select: { instanceId: true, providerInstanceId: true }
+      });
+      const values: Array<string | null | undefined> = [];
+      for (const r of records ?? []) {
+        values.push(r?.instanceId);
+        values.push(r?.providerInstanceId);
+      }
+      return this.uniqueStrings(values);
+    }
+    const record = await model.findFirst({
       where: { userId },
-      orderBy: [{ updatedAt: 'desc' }],
+      orderBy: { updatedAt: 'desc' },
       select: { instanceId: true, providerInstanceId: true }
     });
-    const values: Array<string | null | undefined> = [];
-    for (const r of records ?? []) {
-      values.push(r?.instanceId);
-      values.push(r?.providerInstanceId);
-    }
-    return this.uniqueStrings(values);
+    return this.uniqueStrings([record?.instanceId, record?.providerInstanceId]);
   }
 
   private async readLocalConversationAsProviderItems(userId: string, normalizedPhone: string, limit: number): Promise<any[]> {
