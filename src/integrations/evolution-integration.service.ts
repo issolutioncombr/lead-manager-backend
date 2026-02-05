@@ -38,6 +38,7 @@ interface EvolutionQrPayload {
 
 export interface EvolutionSessionResponse {
   instanceId: string;
+  providerInstanceId?: string | null;
   status: 'connected' | 'pending' | 'disconnected';
   qrCode?: EvolutionQrPayload | null;
   number?: string | null;
@@ -320,6 +321,7 @@ export class EvolutionIntegrationService {
 
           return {
             instanceId: record.instanceId,
+            providerInstanceId: this.resolveProviderInstanceId(record),
             status: 'disconnected',
             number: this.extractPhoneFromMetadata(record.metadata),
             name: this.extractNameFromMetadata(record.metadata),
@@ -531,16 +533,17 @@ export class EvolutionIntegrationService {
       } as JsonObject
     });
 
-  return {
-    instanceId,
-    status,
-    number: summaryNumber ?? this.extractPhoneFromMetadata(instance.metadata),
-    name: summary?.profileName ?? this.extractNameFromMetadata(instance.metadata),
-    qrCode,
-    providerStatus: providerState,
-    message: state.message ?? null,
-    pairingCode: this.extractPairingCodeFromMetadata(instance.metadata)
-  };
+    return {
+      instanceId,
+      providerInstanceId: summary?.id ?? providerInstanceId ?? null,
+      status,
+      number: summaryNumber ?? this.extractPhoneFromMetadata(instance.metadata),
+      name: summary?.profileName ?? this.extractNameFromMetadata(instance.metadata),
+      qrCode,
+      providerStatus: providerState,
+      message: state.message ?? null,
+      pairingCode: this.extractPairingCodeFromMetadata(instance.metadata)
+    };
   }
 
   async disconnect(userId: string, instanceId: string): Promise<EvolutionSessionResponse> {
