@@ -468,10 +468,12 @@ export class EvolutionIntegrationService {
       ownerJid: summary?.ownerJid ?? null,
       profileName: summary?.profileName ?? null,
       profilePicUrl: summary?.profilePicUrl ?? null,
-      number: summaryNumber ?? null,
       providerId: summary?.id ?? providerInstanceId ?? null,
       lastStatusAt: new Date().toISOString()
     };
+    if (summaryNumber) {
+      metadataPatch.number = summaryNumber;
+    }
 
     const qr = await this.fetchQr(instance, summary?.id ?? providerInstanceId ?? null, phoneNumber ?? summaryNumber ?? null);
 
@@ -527,7 +529,7 @@ export class EvolutionIntegrationService {
         ownerJid: summary?.ownerJid ?? null,
         profileName: summary?.profileName ?? null,
         profilePicUrl: summary?.profilePicUrl ?? null,
-        number: summaryNumber ?? null,
+        ...(summaryNumber ? { number: summaryNumber } : {}),
         providerId: summary?.id ?? providerInstanceId ?? null,
         lastStatusAt: new Date().toISOString()
       } as JsonObject
