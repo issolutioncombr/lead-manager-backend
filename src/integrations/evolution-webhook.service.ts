@@ -278,11 +278,17 @@ export class EvolutionWebhookService {
       if (n8nUrl) {
         const userApiKey = await (this.prisma as any).user.findUnique({
           where: { id: userId },
-          select: { apiKey: true }
+          select: { apiKey: true, companyName: true }
         });
 
+        const fromNumber = fromMe ? (payload?.body?.sender ?? null) : phoneRaw;
         const outbound = {
           jsonrow,
+          user_id: userId,
+          company_id: null,
+          company_name: userApiKey?.companyName ?? null,
+          instance_id: createdWebhook.instanceId,
+          from_number: fromNumber,
           instance: {
             userId,
             instanceId: createdWebhook.instanceId,
