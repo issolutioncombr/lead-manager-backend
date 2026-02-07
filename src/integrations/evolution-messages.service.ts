@@ -378,20 +378,35 @@ export class EvolutionMessagesService {
         try {
           const token = await this.resolveToken(userId, instanceId);
           const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
-          let provider: any = null;
-          try {
-            provider = await this.evolution.findChats({ instanceId: providerInstanceName, limit: opts?.limit ?? 100, token: token ?? undefined });
-          } catch (e) {
-            provider = await this.evolution.listChats({ instanceId: providerInstanceName, limit: opts?.limit ?? 100, token: token ?? undefined });
+          const desired = Math.max(10, Math.min(2000, opts?.limit ?? 100));
+          const pageLimit = Math.max(50, Math.min(200, desired));
+          let cursor: string | undefined = undefined;
+          let guard = 0;
+          while (guard < 20 && items.length < desired) {
+            guard += 1;
+            const provider: any = await this.evolution.listChats({
+              instanceId: providerInstanceName,
+              limit: pageLimit,
+              cursor,
+              token: token ?? undefined
+            });
+            const got = Array.isArray((provider as any)?.chats)
+              ? (provider as any).chats
+              : Array.isArray((provider as any)?.data)
+              ? (provider as any).data
+              : Array.isArray(provider)
+              ? provider
+              : (provider as any)?.records ?? [];
+            items = [...items, ...(Array.isArray(got) ? got : [])];
+            const nextCursor =
+              (provider as any)?.cursor ??
+              (provider as any)?.nextCursor ??
+              (provider as any)?.paging?.cursor ??
+              (provider as any)?.pagination?.cursor ??
+              null;
+            if (!nextCursor || String(nextCursor) === String(cursor)) break;
+            cursor = String(nextCursor);
           }
-          const got = Array.isArray((provider as any)?.chats)
-            ? (provider as any).chats
-            : Array.isArray((provider as any)?.data)
-            ? (provider as any).data
-            : Array.isArray(provider)
-            ? provider
-            : (provider as any)?.records ?? [];
-          items = [...items, ...(Array.isArray(got) ? got : [])];
           lastError = null;
           if (opts?.instanceId) break;
         } catch (error) {
