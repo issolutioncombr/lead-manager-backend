@@ -380,7 +380,7 @@ export class EvolutionMessagesService {
           const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
           const desired = Math.max(10, Math.min(2000, opts?.limit ?? 100));
           const pageLimit = Math.max(50, Math.min(200, desired));
-          let cursor: string | undefined = undefined;
+          let cursor: string | undefined = '1';
           let guard = 0;
           while (guard < 20 && items.length < desired) {
             guard += 1;
@@ -404,8 +404,16 @@ export class EvolutionMessagesService {
               (provider as any)?.paging?.cursor ??
               (provider as any)?.pagination?.cursor ??
               null;
-            if (!nextCursor || String(nextCursor) === String(cursor)) break;
-            cursor = String(nextCursor);
+            if (nextCursor && String(nextCursor) !== String(cursor)) {
+              cursor = String(nextCursor);
+              continue;
+            }
+            if (Array.isArray(got) && got.length >= pageLimit) {
+              const n = Number(cursor ?? '1');
+              cursor = String(Number.isFinite(n) ? n + 1 : guard + 1);
+              continue;
+            }
+            break;
           }
           lastError = null;
           if (opts?.instanceId) break;

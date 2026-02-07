@@ -344,19 +344,26 @@ export class EvolutionService {
 
   private async getChatsPath(opts?: { instanceId?: string; limit?: number; cursor?: string; token?: string }): Promise<string> {
     if (this.discoveredPaths?.chats) {
-      return this.appendQuery(this.discoveredPaths.chats, opts);
+      const base = this.discoveredPaths.chats;
+      if (base === '/chat/find-chats') {
+        return this.appendQuery(base, { instanceId: opts?.instanceId, limit: opts?.limit, page: opts?.cursor, token: opts?.token });
+      }
+      return this.appendQuery(base, opts);
     }
-    const candidates = ['/messages/chats', '/chats', '/chat/list', '/messages/contacts', '/contacts'];
+    const candidates = ['/chat/find-chats', '/chat/find-chats/', '/messages/chats', '/chats', '/chat/list', '/messages/contacts', '/contacts'];
     for (const base of candidates) {
-      const tryPath = this.appendQuery(base, { limit: opts?.limit ?? 100, instanceId: opts?.instanceId, token: opts?.token });
+      const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
+      const tryPath = cleanBase === '/chat/find-chats'
+        ? this.appendQuery(cleanBase, { instanceId: opts?.instanceId, limit: opts?.limit ?? 100, page: opts?.cursor, token: opts?.token })
+        : this.appendQuery(cleanBase, { limit: opts?.limit ?? 100, instanceId: opts?.instanceId, token: opts?.token });
       const ok = await this.probe(tryPath);
       if (ok) {
-        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: base };
+        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: cleanBase };
         return tryPath;
       }
     }
-    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: '/messages/chats' };
-    return this.appendQuery('/messages/chats', opts);
+    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: '/chat/find-chats' };
+    return this.appendQuery('/chat/find-chats', { instanceId: opts?.instanceId, limit: opts?.limit ?? 100, page: opts?.cursor, token: opts?.token });
   }
 
   private async getConversationPath(number: string, opts?: { limit?: number; cursor?: string; token?: string; instanceId?: string }): Promise<string> {
