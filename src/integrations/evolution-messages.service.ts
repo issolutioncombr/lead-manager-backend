@@ -379,15 +379,12 @@ export class EvolutionMessagesService {
           const token = await this.resolveToken(userId, instanceId);
           const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
           const desired = Math.max(10, Math.min(2000, opts?.limit ?? 100));
-          const pageLimit = Math.max(50, Math.min(200, desired));
-          let cursor: string | undefined = '1';
-          let guard = 0;
-          while (guard < 20 && items.length < desired) {
-            guard += 1;
-            const provider: any = await this.evolution.listChats({
+          let providerItems: any[] = [];
+          try {
+            const provider: any = await this.evolution.findChats({
               instanceId: providerInstanceName,
-              limit: pageLimit,
-              cursor,
+              where: {},
+              limit: desired,
               token: token ?? undefined
             });
             const got = Array.isArray((provider as any)?.chats)
@@ -397,23 +394,47 @@ export class EvolutionMessagesService {
               : Array.isArray(provider)
               ? provider
               : (provider as any)?.records ?? [];
-            items = [...items, ...(Array.isArray(got) ? got : [])];
-            const nextCursor =
-              (provider as any)?.cursor ??
-              (provider as any)?.nextCursor ??
-              (provider as any)?.paging?.cursor ??
-              (provider as any)?.pagination?.cursor ??
-              null;
-            if (nextCursor && String(nextCursor) !== String(cursor)) {
-              cursor = String(nextCursor);
-              continue;
+            providerItems = Array.isArray(got) ? got : [];
+          } catch {
+            const pageLimit = Math.max(50, Math.min(200, desired));
+            let cursor: string | undefined = '1';
+            let guard = 0;
+            while (guard < 20 && providerItems.length < desired) {
+              guard += 1;
+              const provider: any = await this.evolution.listChats({
+                instanceId: providerInstanceName,
+                limit: pageLimit,
+                cursor,
+                token: token ?? undefined
+              });
+              const got = Array.isArray((provider as any)?.chats)
+                ? (provider as any).chats
+                : Array.isArray((provider as any)?.data)
+                ? (provider as any).data
+                : Array.isArray(provider)
+                ? provider
+                : (provider as any)?.records ?? [];
+              providerItems = [...providerItems, ...(Array.isArray(got) ? got : [])];
+              const nextCursor =
+                (provider as any)?.cursor ??
+                (provider as any)?.nextCursor ??
+                (provider as any)?.paging?.cursor ??
+                (provider as any)?.pagination?.cursor ??
+                null;
+              if (nextCursor && String(nextCursor) !== String(cursor)) {
+                cursor = String(nextCursor);
+                continue;
+              }
+              if (Array.isArray(got) && got.length >= pageLimit) {
+                const n = Number(cursor ?? '1');
+                cursor = String(Number.isFinite(n) ? n + 1 : guard + 1);
+                continue;
+              }
+              break;
             }
-            if (Array.isArray(got) && got.length >= pageLimit) {
-              const n = Number(cursor ?? '1');
-              cursor = String(Number.isFinite(n) ? n + 1 : guard + 1);
-              continue;
-            }
-            break;
+          }
+          if (providerItems.length) {
+            items = [...items, ...providerItems];
           }
           lastError = null;
           if (opts?.instanceId) break;
