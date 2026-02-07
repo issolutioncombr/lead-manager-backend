@@ -345,12 +345,16 @@ export class EvolutionService {
   private async getChatsPath(opts?: { instanceId?: string; limit?: number; cursor?: string; token?: string }): Promise<string> {
     if (this.discoveredPaths?.chats) {
       const base = this.discoveredPaths.chats;
+      if (base === '/messages/chats') {
+        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: undefined };
+      } else {
       if (base === '/chat/find-chats') {
         return this.appendQuery(base, { instanceId: opts?.instanceId, limit: opts?.limit, page: opts?.cursor, token: opts?.token });
       }
       return this.appendQuery(base, opts);
+      }
     }
-    const candidates = ['/chat/find-chats', '/chat/find-chats/', '/messages/chats', '/chats', '/chat/list', '/messages/contacts', '/contacts'];
+    const candidates = ['/chat/find-chats', '/chat/find-chats/', '/chats', '/chat/list', '/messages/contacts', '/contacts'];
     for (const base of candidates) {
       const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
       const tryPath = cleanBase === '/chat/find-chats'
