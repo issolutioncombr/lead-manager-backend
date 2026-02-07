@@ -345,29 +345,37 @@ export class EvolutionService {
   private async getChatsPath(opts?: { instanceId?: string; limit?: number; cursor?: string; token?: string }): Promise<string> {
     if (this.discoveredPaths?.chats) {
       const base = this.discoveredPaths.chats;
-      if (base === '/messages/chats') {
-        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: undefined };
-      } else {
-      if (base === '/chat/find-chats') {
+      if (base === '/chat/find-chats' || base === '/chat/find-chats/') {
+        return this.appendQuery('/chat/find-chats', { instanceId: opts?.instanceId, limit: opts?.limit, page: opts?.cursor, token: opts?.token });
+      }
+      if (base === '/chat/find-chats' || base === '/chat/findChats') {
         return this.appendQuery(base, { instanceId: opts?.instanceId, limit: opts?.limit, page: opts?.cursor, token: opts?.token });
       }
       return this.appendQuery(base, opts);
-      }
     }
-    const candidates = ['/chat/find-chats', '/chat/find-chats/', '/chats', '/chat/list', '/messages/contacts', '/contacts'];
+    const candidates = [
+      '/chat/list',
+      '/chats',
+      '/chat/find-chats',
+      '/chat/findChats',
+      '/messages/contacts',
+      '/contacts',
+      '/messages/chats'
+    ];
     for (const base of candidates) {
       const cleanBase = base.endsWith('/') ? base.slice(0, -1) : base;
-      const tryPath = cleanBase === '/chat/find-chats'
-        ? this.appendQuery(cleanBase, { instanceId: opts?.instanceId, limit: opts?.limit ?? 100, page: opts?.cursor, token: opts?.token })
-        : this.appendQuery(cleanBase, { limit: opts?.limit ?? 100, instanceId: opts?.instanceId, token: opts?.token });
+      const tryPath =
+        cleanBase === '/chat/find-chats' || cleanBase === '/chat/findChats'
+          ? this.appendQuery(cleanBase, { instanceId: opts?.instanceId, limit: opts?.limit ?? 100, page: opts?.cursor, token: opts?.token })
+          : this.appendQuery(cleanBase, { limit: opts?.limit ?? 100, instanceId: opts?.instanceId, token: opts?.token });
       const ok = await this.probe(tryPath);
       if (ok) {
         this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: cleanBase };
         return tryPath;
       }
     }
-    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: '/chat/find-chats' };
-    return this.appendQuery('/chat/find-chats', { instanceId: opts?.instanceId, limit: opts?.limit ?? 100, page: opts?.cursor, token: opts?.token });
+    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), chats: '/chat/list' };
+    return this.appendQuery('/chat/list', { limit: opts?.limit ?? 100, instanceId: opts?.instanceId, token: opts?.token });
   }
 
   private async getConversationPath(number: string, opts?: { limit?: number; cursor?: string; token?: string; instanceId?: string }): Promise<string> {
