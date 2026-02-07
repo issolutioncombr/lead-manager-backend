@@ -609,34 +609,38 @@ export class EvolutionMessagesService {
     const model = (this.prisma as any).whatsappMessage;
     if (typeof model?.groupBy === 'function') {
       const grouped = await model.groupBy({
-        by: ['phoneRaw'],
-        where: { userId, phoneRaw: { not: null } },
+        by: ['remoteJid'],
+        where: { userId, remoteJid: { endsWith: '@s.whatsapp.net' } },
         _max: { timestamp: true, updatedAt: true },
         orderBy: [{ _max: { timestamp: 'desc' } }],
         take
       });
-      const phones: string[] = [];
+      const jids: string[] = [];
       for (const g of grouped ?? []) {
-        const p = String(g?.phoneRaw ?? '').replace(/\D+/g, '');
-        if (p) phones.push(p);
+        const jid = String(g?.remoteJid ?? '').trim();
+        if (jid) jids.push(jid);
       }
-      if (!phones.length) return [];
+      if (!jids.length) return [];
       const rows = await model.findMany({
-        where: { userId, phoneRaw: { in: phones } },
+        where: { userId, remoteJid: { in: jids } },
         orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
-        take: phones.length * 5
+        take: jids.length * 5
       });
       const byPhone = new Map<string, any>();
       for (const m of rows ?? []) {
-        const phone = String(m?.phoneRaw ?? '').replace(/\D+/g, '');
+        const phone =
+          String(m?.phoneRaw ?? '').replace(/\D+/g, '') ||
+          String(m?.remoteJid ?? '').replace('@s.whatsapp.net', '').replace(/\D+/g, '');
         if (!phone || byPhone.has(phone)) continue;
         byPhone.set(phone, m);
         if (byPhone.size >= take) break;
       }
       const items: any[] = [];
-      for (const phone of phones) {
+      for (const jid of jids) {
+        const phone = jid.replace('@s.whatsapp.net', '').replace(/\D+/g, '');
         const m = byPhone.get(phone);
         if (!m) continue;
+        if (phone.length < 7 || phone.length > 15) continue;
         items.push({
           id: m.wamid ?? phone,
           remoteJid: `${phone}@s.whatsapp.net`,
