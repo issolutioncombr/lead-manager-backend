@@ -412,7 +412,18 @@ export class EvolutionMessagesService {
     }
     const dataRaw = items
       .map((c: any) => {
-        const jidRaw = String(c?.remoteJid ?? c?.jid ?? c?.phoneRaw ?? '');
+        const jidRaw = [
+          c?.remoteJid,
+          c?.jid,
+          c?.chatId,
+          c?.id,
+          c?.key?.remoteJid,
+          c?.lastMessage?.key?.remoteJid,
+          c?.lastMessage?.remoteJid,
+          c?.phoneRaw
+        ]
+          .map((v: any) => (typeof v === 'string' ? v.trim() : ''))
+          .find((v: string) => v.length > 0) ?? '';
         if (jidRaw.includes('@') && !jidRaw.endsWith('@s.whatsapp.net')) return null;
         const left = jidRaw.includes('@') ? jidRaw.split('@')[0] : jidRaw;
         const normalized = left ? left.replace(/\D+/g, '') : null;
