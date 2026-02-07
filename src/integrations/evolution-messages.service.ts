@@ -261,6 +261,34 @@ export class EvolutionMessagesService {
     return { data, total: data.length, page: 1, limit };
   }
 
+  async getProfilePicUrl(
+    userId: string,
+    opts: { jid?: string; phone?: string; instanceId?: string }
+  ): Promise<string | null> {
+    const jid = (() => {
+      const j = String(opts.jid ?? '').trim();
+      if (j) return j;
+      const digits = String(opts.phone ?? '').replace(/\D+/g, '');
+      if (!digits) return '';
+      return `${digits}@s.whatsapp.net`;
+    })();
+    if (!jid) return null;
+    const instanceCandidates = await this.resolveInstanceCandidates(userId, opts.instanceId);
+    let last: string | null = null;
+    for (const instanceId of instanceCandidates.length ? instanceCandidates : [opts.instanceId ?? '']) {
+      const id = String(instanceId ?? '').trim();
+      if (!id) continue;
+      try {
+        const url = await this.evolution.fetchProfilePicUrl({ instanceId: id, jid });
+        if (url) return url;
+        last = url;
+      } catch {
+        continue;
+      }
+    }
+    return last;
+  }
+
   async listUpdates(
     userId: string,
     phone: string,
@@ -386,13 +414,21 @@ export class EvolutionMessagesService {
     const dataRaw = items
       .map((c: any) => {
         const jidRaw = String(c?.remoteJid ?? c?.jid ?? c?.phoneRaw ?? '');
+        if (jidRaw.includes('@') && !jidRaw.endsWith('@s.whatsapp.net')) return null;
         const left = jidRaw.includes('@') ? jidRaw.split('@')[0] : jidRaw;
         const normalized = left ? left.replace(/\D+/g, '') : null;
-        if (!normalized || normalized.length < 7 || normalized.length > 15) return null;
+        if (!normalized || !normalized.startsWith('55') || normalized.length < 12 || normalized.length > 13) return null;
         const last = c?.lastMessage ?? c?.message ?? {};
         const lastText = last?.conversation ?? last?.message?.conversation ?? last?.extendedTextMessage?.text ?? last?.imageMessage?.caption ?? null;
         const lastTs = last?.messageTimestamp ?? last?.timestamp ?? c?.timestamp ?? null;
         const remoteJid = String(c?.remoteJid ?? c?.jid ?? '').trim() || (normalized ? `${normalized}@s.whatsapp.net` : '');
+        const avatarUrl = (typeof c?.profilePicUrl === 'string' && c.profilePicUrl.trim())
+          ? c.profilePicUrl.trim()
+          : (typeof c?.profilePictureUrl === 'string' && c.profilePictureUrl.trim())
+            ? c.profilePictureUrl.trim()
+            : (typeof c?.picUrl === 'string' && c.picUrl.trim())
+              ? c.picUrl.trim()
+              : null;
         const tsIso = (() => {
           if (!lastTs) return null;
           const n = Number(lastTs);
@@ -409,6 +445,7 @@ export class EvolutionMessagesService {
           name: c?.pushName ?? c?.name ?? null,
           contact: normalized,
           remoteJid,
+          avatarUrl,
           lastMessage: lastText ? { text: lastText, timestamp: tsIso ?? new Date().toISOString(), fromMe: !!(last?.key?.fromMe) } : null
         };
       })

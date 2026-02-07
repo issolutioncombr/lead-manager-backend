@@ -57,6 +57,7 @@ export class EvolutionService {
   private discoveredPaths?: { chats?: string; conversation?: string };
   private readonly instanceNameCache = new Map<string, { value: string; expiresAt: number }>();
   private readonly instancesCache = new Map<string, { value: EvolutionInstanceSummary[]; expiresAt: number }>();
+  private readonly profilePicCache = new Map<string, { value: string | null; expiresAt: number }>();
   private readonly isMock: boolean = false;
 
   constructor(private readonly configService: ConfigService) {
@@ -236,6 +237,31 @@ export class EvolutionService {
       this.instanceNameCache.set(key, { value: key, expiresAt: now + 10_000 });
       return key;
     }
+  }
+
+  async fetchProfilePicUrl(opts: { instanceId: string; jid: string }): Promise<string | null> {
+    const instanceKey = await this.resolveInstanceName(opts.instanceId);
+    const jid = String(opts.jid ?? '').trim();
+    if (!jid) return null;
+    const cacheKey = `${instanceKey}|${jid}`;
+    const now = Date.now();
+    const cached = this.profilePicCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) return cached.value;
+    const path = this.appendQuery(`/chat/fetch-profilepic-url/${encodeURIComponent(instanceKey)}`, { jid });
+    const payload = await this.request<any>(path, { method: 'GET' }).catch(() => null);
+    const url =
+      typeof payload === 'string'
+        ? payload
+        : typeof payload?.profilePicUrl === 'string'
+          ? payload.profilePicUrl
+          : typeof payload?.url === 'string'
+            ? payload.url
+            : typeof payload?.profilePictureUrl === 'string'
+              ? payload.profilePictureUrl
+              : null;
+    const value = url && url.trim() ? url.trim() : null;
+    this.profilePicCache.set(cacheKey, { value, expiresAt: now + 10 * 60_000 });
+    return value;
   }
 
   async delete(instanceId: string) {

@@ -55,6 +55,17 @@ export class EvolutionMessagesController {
     return { data };
   }
 
+  @Get('profile-pic')
+  async profilePic(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('jid') jid?: string,
+    @Query('phone') phone?: string,
+    @Query('instanceId') instanceId?: string
+  ) {
+    const res = await this.svc.getProfilePicUrl(user.userId, { jid: jid || undefined, phone: phone || undefined, instanceId: instanceId || undefined });
+    return { profilePicUrl: res };
+  }
+
   @Get('updates')
   async updates(
     @CurrentUser() user: AuthenticatedUser,

@@ -39,6 +39,7 @@ interface EvolutionQrPayload {
 export interface EvolutionSessionResponse {
   instanceId: string;
   providerInstanceId?: string | null;
+  profilePicUrl?: string | null;
   status: 'connected' | 'pending' | 'disconnected';
   qrCode?: EvolutionQrPayload | null;
   number?: string | null;
@@ -325,6 +326,7 @@ export class EvolutionIntegrationService {
             status: 'disconnected',
             number: this.extractPhoneFromMetadata(record.metadata),
             name: this.extractNameFromMetadata(record.metadata),
+            profilePicUrl: this.extractProfilePicFromMetadata(record.metadata),
             providerStatus: 'unknown',
             pairingCode: this.extractPairingCodeFromMetadata(record.metadata),
             qrCode: this.readQrFromMetadata(record.metadata)
@@ -490,6 +492,7 @@ export class EvolutionIntegrationService {
       qrCode: qr,
       number: summaryNumber ?? this.extractPhoneFromMetadata(instance.metadata),
       name: summary?.profileName ?? this.extractNameFromMetadata(instance.metadata),
+      profilePicUrl: summary?.profilePicUrl ?? this.extractProfilePicFromMetadata(instance.metadata),
       providerStatus: providerState
     };
   }
@@ -541,6 +544,7 @@ export class EvolutionIntegrationService {
       status,
       number: summaryNumber ?? this.extractPhoneFromMetadata(instance.metadata),
       name: summary?.profileName ?? this.extractNameFromMetadata(instance.metadata),
+      profilePicUrl: summary?.profilePicUrl ?? this.extractProfilePicFromMetadata(instance.metadata),
       qrCode,
       providerStatus: providerState,
       message: state.message ?? null,
@@ -1112,6 +1116,15 @@ export class EvolutionIntegrationService {
     const name = record['profileName'] ?? record['name'] ?? record['displayName'];
 
     return typeof name === 'string' && name.length > 0 ? name : null;
+  }
+
+  private extractProfilePicFromMetadata(metadata: JsonValue | null): string | null {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+      return null;
+    }
+    const record = metadata as JsonObject;
+    const url = record['profilePicUrl'];
+    return typeof url === 'string' && url.length > 0 ? url : null;
   }
 
   private extractSlotIdFromMetadata(metadata: JsonValue | null): string | null {
