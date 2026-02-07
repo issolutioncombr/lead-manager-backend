@@ -27,7 +27,7 @@ export class EvolutionMessagesService {
   }
 
   private async readLocalChatsCached(userId: string, limit: number): Promise<any[]> {
-    const normalizedLimit = Math.max(10, Math.min(500, limit));
+    const normalizedLimit = Math.max(10, Math.min(2000, limit));
     const key = `${userId}:${normalizedLimit}`;
     const now = Date.now();
     const cached = this.chatsCache.get(key);
@@ -398,18 +398,17 @@ export class EvolutionMessagesService {
           lastError = error;
         }
       }
-      if (!opts?.instanceId && items.length) {
-        lastError = null;
-      }
       if (lastError) {
         const status = lastError instanceof HttpException ? lastError.getStatus() : null;
         this.logger.warn(
           `Falha ao listar chats no provider; usando fallback local. userId=${userId} instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'} durationMs=${Date.now() - startedAt}`
         );
-        items = await this.readLocalChatsCached(userId, opts?.limit ?? 100);
+        items = [];
       }
-    } else {
-      items = await this.readLocalChatsCached(userId, opts?.limit ?? 100);
+    }
+    const localChats = await this.readLocalChatsCached(userId, opts?.limit ?? 500);
+    if (localChats.length) {
+      items = [...items, ...localChats];
     }
     const dataRaw = items
       .map((c: any) => {
@@ -606,15 +605,63 @@ export class EvolutionMessagesService {
   }
 
   private async readLocalChatsAsProviderItems(userId: string, limit: number): Promise<any[]> {
-    const recent = await (this.prisma as any).whatsappMessage.findMany({
+    const take = Math.max(10, Math.min(2000, limit));
+    const model = (this.prisma as any).whatsappMessage;
+    if (typeof model?.groupBy === 'function') {
+      const grouped = await model.groupBy({
+        by: ['phoneRaw'],
+        where: { userId, phoneRaw: { not: null } },
+        _max: { timestamp: true, updatedAt: true },
+        orderBy: [{ _max: { timestamp: 'desc' } }],
+        take
+      });
+      const phones: string[] = [];
+      for (const g of grouped ?? []) {
+        const p = String(g?.phoneRaw ?? '').replace(/\D+/g, '');
+        if (p) phones.push(p);
+      }
+      if (!phones.length) return [];
+      const rows = await model.findMany({
+        where: { userId, phoneRaw: { in: phones } },
+        orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
+        take: phones.length * 5
+      });
+      const byPhone = new Map<string, any>();
+      for (const m of rows ?? []) {
+        const phone = String(m?.phoneRaw ?? '').replace(/\D+/g, '');
+        if (!phone || byPhone.has(phone)) continue;
+        byPhone.set(phone, m);
+        if (byPhone.size >= take) break;
+      }
+      const items: any[] = [];
+      for (const phone of phones) {
+        const m = byPhone.get(phone);
+        if (!m) continue;
+        items.push({
+          id: m.wamid ?? phone,
+          remoteJid: `${phone}@s.whatsapp.net`,
+          pushName: m.pushName ?? null,
+          lastMessage: {
+            message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
+            messageTimestamp: Math.floor(
+              (m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000
+            ),
+            key: { fromMe: !!m.fromMe }
+          }
+        });
+      }
+      return items;
+    }
+
+    const recent = await model.findMany({
       where: { userId },
       orderBy: { timestamp: 'desc' },
-      take: Math.max(10, Math.min(500, limit))
+      take: Math.max(10, Math.min(500, take))
     });
     const seen = new Set<string>();
     const items: any[] = [];
     for (const m of recent) {
-      const phone = (m.phoneRaw ?? '').replace(/\D+/g, '');
+      const phone = String(m?.phoneRaw ?? '').replace(/\D+/g, '');
       if (!phone || seen.has(phone)) continue;
       seen.add(phone);
       items.push({
