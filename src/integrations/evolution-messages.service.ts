@@ -417,7 +417,7 @@ export class EvolutionMessagesService {
         if (jidRaw.includes('@') && !jidRaw.endsWith('@s.whatsapp.net')) return null;
         const left = jidRaw.includes('@') ? jidRaw.split('@')[0] : jidRaw;
         const normalized = left ? left.replace(/\D+/g, '') : null;
-        if (!normalized || !normalized.startsWith('55') || normalized.length < 12 || normalized.length > 13) return null;
+        if (!normalized || normalized.length < 7 || normalized.length > 15) return null;
         const last = c?.lastMessage ?? c?.message ?? {};
         const lastText = last?.conversation ?? last?.message?.conversation ?? last?.extendedTextMessage?.text ?? last?.imageMessage?.caption ?? null;
         const lastTs = last?.messageTimestamp ?? last?.timestamp ?? c?.timestamp ?? null;
