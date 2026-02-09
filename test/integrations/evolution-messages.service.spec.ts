@@ -15,7 +15,8 @@ class MockPrisma {
   };
 
   evolutionInstance = {
-    findFirst: jest.fn(async () => null)
+    findFirst: jest.fn(async () => null),
+    findMany: jest.fn(async () => [])
   };
 }
 
@@ -132,6 +133,7 @@ describe('EvolutionMessagesService (TS)', () => {
       {
         wamid: 'wamid-4',
         fromMe: true,
+        instanceId: 'inst1',
         conversation: 'm4',
         mediaUrl: null,
         caption: null,
@@ -144,6 +146,7 @@ describe('EvolutionMessagesService (TS)', () => {
       {
         wamid: 'wamid-3',
         fromMe: false,
+        instanceId: 'inst1',
         conversation: 'm3',
         mediaUrl: null,
         caption: null,
@@ -166,6 +169,7 @@ describe('EvolutionMessagesService (TS)', () => {
     expect(new Date(res.data[0].timestamp).toISOString()).toBe('2026-02-04T09:00:03.000Z');
     expect(res.hasMore).toBe(true);
     expect(res.nextCursor).toBe('2026-02-04T09:00:03.000Z');
+    expect(res.data[1].originInstanceId).toBe('inst1');
     const call = (prisma.whatsappMessage.findMany as any).mock.calls[0][0];
     expect(call.take).toBe(2);
   });
@@ -177,6 +181,7 @@ describe('EvolutionMessagesService (TS)', () => {
         wamid: 'wamid-1',
         phoneRaw: '5511999999999',
         remoteJid: '5511999999999@s.whatsapp.net',
+        instanceId: 'inst1',
         fromMe: false,
         conversation: 'oi',
         mediaUrl: null,
@@ -192,5 +197,16 @@ describe('EvolutionMessagesService (TS)', () => {
     expect(Array.isArray(chats)).toBe(true);
     expect(chats.length).toBeGreaterThan(0);
     expect(chats[0].avatarUrl).toBe('https://cdn.example.com/pic.jpg');
+    expect(chats[0].originInstanceId).toBe('inst1');
+  });
+
+  it('getProfilePicUrl usa cache por instanceId+jid quando instanceId é fornecido', async () => {
+    evolution.fetchProfilePicUrl = jest.fn(async () => 'https://cdn.example.com/a.jpg') as any;
+    const jid = '5511999999999@s.whatsapp.net';
+    const a = await svc.getProfilePicUrl('user1', { jid, instanceId: 'inst1' });
+    const b = await svc.getProfilePicUrl('user1', { jid, instanceId: 'inst1' });
+    expect(a).toBe('https://cdn.example.com/a.jpg');
+    expect(b).toBe('https://cdn.example.com/a.jpg');
+    expect(evolution.fetchProfilePicUrl).toHaveBeenCalledTimes(1);
   });
 });

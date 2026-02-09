@@ -14,11 +14,54 @@ export class EvolutionMessagesService {
   private readonly logger = new Logger(EvolutionMessagesService.name);
   private readonly buckets = new Map<string, { count: number; resetAt: number }>();
   private readonly chatsCache = new Map<string, { expiresAt: number; items: any[] }>();
+  private readonly profilePicCache = new Map<string, { expiresAt: number; value: string | null }>();
   constructor(
     private readonly prisma: PrismaService,
     private readonly evolution: EvolutionService,
     private readonly events: MessageEventsService
   ) {}
+
+  private async getInstanceMetaMap(userId: string): Promise<Map<string, { publicId: string; number: string | null; profilePicUrl: string | null }>> {
+    const model = (this.prisma as any).evolutionInstance;
+    if (typeof model?.findMany !== 'function') return new Map();
+    const records = await model.findMany({
+      where: { userId },
+      select: { instanceId: true, providerInstanceId: true, metadata: true }
+    });
+    const readString = (v: any) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const map = new Map<string, { publicId: string; number: string | null; profilePicUrl: string | null }>();
+    for (const r of records ?? []) {
+      const instanceId = readString(r?.instanceId);
+      const providerInstanceId = readString(r?.providerInstanceId);
+      const publicId = providerInstanceId ?? instanceId;
+      if (!publicId) continue;
+      const meta: any = r?.metadata && typeof r.metadata === 'object' && !Array.isArray(r.metadata) ? r.metadata : {};
+      const number = readString(meta?.number) ?? readString(meta?.requestedNumber) ?? null;
+      const profilePicUrl = readString(meta?.profilePicUrl) ?? null;
+      const payload = { publicId, number, profilePicUrl };
+      if (instanceId) map.set(instanceId, payload);
+      if (providerInstanceId) map.set(providerInstanceId, payload);
+      map.set(publicId, payload);
+    }
+    return map;
+  }
+
+  private extractOriginInstanceId(value: any): string | null {
+    const readString = (v: any) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+    const direct = readString(value?.instanceId) ?? readString(value?.originInstanceId) ?? readString(value?.__originInstanceId);
+    if (direct) return direct;
+    const raw = value?.rawJson;
+    if (raw && typeof raw === 'object') {
+      return (
+        readString((raw as any)?.instanceId) ??
+        readString((raw as any)?.instance) ??
+        readString((raw as any)?.body?.instance) ??
+        readString((raw as any)?.body?.data?.instanceId) ??
+        null
+      );
+    }
+    return null;
+  }
 
   private maskPhone(phoneRaw: string) {
     const digits = String(phoneRaw ?? '').replace(/\D+/g, '');
@@ -66,12 +109,15 @@ export class EvolutionMessagesService {
     const wamid = payload.clientMessageId ? `client-${payload.clientMessageId}` : `client-${randomUUID()}`;
 
     const now = new Date();
+    const instanceMeta = await this.getInstanceMetaMap(userId);
+    const initialInstanceId = payload.instanceId ? (instanceMeta.get(payload.instanceId)?.publicId ?? payload.instanceId) : null;
 
     const record: Record<string, any> = {
       userId,
       wamid,
       remoteJid,
       phoneRaw: normalized,
+      instanceId: initialInstanceId,
       fromMe: true,
       direction: 'OUTBOUND',
       messageType: payload.mediaUrl ? 'media' : 'text',
@@ -82,7 +128,7 @@ export class EvolutionMessagesService {
       timestamp: now,
       rawJson: {
         clientMessageId: payload.clientMessageId ?? null,
-        instanceId: payload.instanceId ?? null
+        instanceId: initialInstanceId
       }
     };
 
@@ -108,6 +154,7 @@ export class EvolutionMessagesService {
     const instanceCandidates = await this.resolveInstanceCandidates(userId, payload.instanceId);
     let lastError: unknown = null;
     const sendWith = async (instanceId: string | null) => {
+      const publicInstanceId = instanceId ? (instanceMeta.get(instanceId)?.publicId ?? instanceId) : null;
       const providerResp = await this.evolution.sendMessage({
         instanceId,
         number: `+${normalized}`,
@@ -118,7 +165,11 @@ export class EvolutionMessagesService {
       });
       await (this.prisma as any).whatsappMessage.update({
         where: { wamid },
-        data: { deliveryStatus: 'SENT', rawJson: { ...(record.rawJson ?? {}), providerResp, instanceId } }
+        data: {
+          deliveryStatus: 'SENT',
+          instanceId: publicInstanceId,
+          rawJson: { ...(record.rawJson ?? {}), providerResp, instanceId: publicInstanceId }
+        }
       });
       this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
       this.logger.log(
@@ -171,6 +222,8 @@ export class EvolutionMessagesService {
     if (!normalized || normalized.length < 7) {
       throw new BadRequestException('Telefone inválido');
     }
+    const instanceMeta = await this.getInstanceMetaMap(userId);
+    const requestedInstancePublicId = opts?.instanceId ? (instanceMeta.get(opts.instanceId)?.publicId ?? opts.instanceId) : null;
     const limit = Math.max(1, Math.min(1000, opts?.limit ?? 50));
     const beforeTimestamp = this.parseDateOrNull(opts?.beforeTimestamp);
     const beforeUpdatedAt = this.parseDateOrNull(opts?.beforeUpdatedAt);
@@ -194,6 +247,7 @@ export class EvolutionMessagesService {
           let provider: any = null;
           const remoteJid = (opts?.remoteJid ?? `${normalized}@s.whatsapp.net`).trim();
           const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
+          const originInstanceId = instanceMeta.get(instanceId)?.publicId ?? instanceId;
           try {
             provider = await this.evolution.findMessages({
               instanceId: providerInstanceName,
@@ -212,7 +266,10 @@ export class EvolutionMessagesService {
           }
           lastProvider = provider;
           const got = this.extractProviderConversationItems(provider);
-          items = [...items, ...(Array.isArray(got) ? got : [])];
+          const annotated = (Array.isArray(got) ? got : []).map((m: any) =>
+            m && typeof m === 'object' ? { ...m, __originInstanceId: originInstanceId } : m
+          );
+          items = [...items, ...annotated];
           lastError = null;
           if (opts?.instanceId) break;
         } catch (error) {
@@ -225,7 +282,7 @@ export class EvolutionMessagesService {
       if (!lastError) {
         const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
         items = [...items, ...(Array.isArray(localItems) ? localItems : [])];
-        const { data } = this.buildConversationResponse(normalized, items, opts?.direction);
+        const { data } = this.buildConversationResponse(normalized, items, opts?.direction, instanceMeta, requestedInstancePublicId);
         const providerNext = this.extractProviderNextCursor(lastProvider);
         const oldest = data.length ? new Date(data[0].timestamp) : null;
         const hasMoreLocal = oldest
@@ -261,7 +318,7 @@ export class EvolutionMessagesService {
     } else {
       items = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
     }
-    const { data } = this.buildConversationResponse(normalized, items, opts?.direction);
+    const { data } = this.buildConversationResponse(normalized, items, opts?.direction, instanceMeta, requestedInstancePublicId);
     const oldest = data.length ? new Date(data[0].timestamp) : null;
     const hasMore =
       !!oldest &&
@@ -287,7 +344,13 @@ export class EvolutionMessagesService {
     };
   }
 
-  private buildConversationResponse(normalizedPhone: string, items: any[], direction?: 'inbound' | 'outbound') {
+  private buildConversationResponse(
+    normalizedPhone: string,
+    items: any[],
+    direction: 'inbound' | 'outbound' | undefined,
+    instanceMeta: Map<string, { publicId: string; number: string | null; profilePicUrl: string | null }>,
+    defaultOriginInstanceId: string | null
+  ) {
     const seenIds = new Set<string>();
     const data = items
       .map((m: any) => {
@@ -298,6 +361,8 @@ export class EvolutionMessagesService {
         const mediaUrl = msg?.imageMessage?.url ?? msg?.videoMessage?.url ?? msg?.documentMessage?.url ?? null;
         const type = m?.messageType ?? (mediaUrl ? 'media' : (text ? 'text' : null));
         const ts = m?.messageTimestamp ?? m?.timestamp ?? Date.now() / 1000;
+        const originInstanceId = fromMe ? (this.extractOriginInstanceId(m) ?? defaultOriginInstanceId ?? null) : null;
+        const originMeta = originInstanceId ? instanceMeta.get(originInstanceId) ?? null : null;
         return {
           id: m?.id ?? key?.id ?? m?.wamid ?? `${normalizedPhone}-${ts}`,
           wamid: key?.id ?? m?.wamid ?? null,
@@ -310,7 +375,10 @@ export class EvolutionMessagesService {
           deliveryStatus: m?.deliveryStatus ?? null,
           timestamp: new Date((Number(ts) || Math.floor(Date.now() / 1000)) * 1000),
           pushName: m?.pushName ?? m?.name ?? null,
-          phoneRaw: normalizedPhone
+          phoneRaw: normalizedPhone,
+          originInstanceId,
+          originNumber: originMeta?.number ?? null,
+          originProfilePicUrl: originMeta?.profilePicUrl ?? null
         };
       })
       .filter((e: any) => {
@@ -341,6 +409,17 @@ export class EvolutionMessagesService {
       return `${digits}@s.whatsapp.net`;
     })();
     if (!jid) return null;
+    const instanceKey = String(opts.instanceId ?? '').trim();
+    if (instanceKey) {
+      const cacheKey = `${userId}|${instanceKey}|${jid}`;
+      const now = Date.now();
+      const cached = this.profilePicCache.get(cacheKey);
+      if (cached && cached.expiresAt > now) return cached.value;
+      const url = await this.evolution.fetchProfilePicUrl({ instanceId: instanceKey, jid }).catch(() => null);
+      const value = typeof url === 'string' && url.trim() ? url.trim() : null;
+      this.profilePicCache.set(cacheKey, { value, expiresAt: now + 10 * 60_000 });
+      return value;
+    }
     const instanceCandidates = await this.resolveInstanceCandidates(userId, opts.instanceId);
     let last: string | null = null;
     for (const instanceId of instanceCandidates.length ? instanceCandidates : [opts.instanceId ?? '']) {
@@ -433,6 +512,8 @@ export class EvolutionMessagesService {
 
   async listChats(userId: string, opts?: { instanceId?: string; limit?: number; source?: 'provider' | 'local' }) {
     let items: any[] = [];
+    const instanceMeta = await this.getInstanceMetaMap(userId);
+    const requestedInstancePublicId = opts?.instanceId ? (instanceMeta.get(opts.instanceId)?.publicId ?? opts.instanceId) : null;
     const useProvider = opts?.source === 'provider'
       ? true
       : opts?.source === 'local'
@@ -446,6 +527,7 @@ export class EvolutionMessagesService {
         try {
           const token = await this.resolveToken(userId, instanceId);
           const providerInstanceName = await this.evolution.resolveInstanceName(instanceId);
+          const originInstanceId = instanceMeta.get(instanceId)?.publicId ?? instanceId;
           let provider: any = null;
           try {
             provider = await this.evolution.findChats({
@@ -468,7 +550,10 @@ export class EvolutionMessagesService {
             : Array.isArray(provider)
             ? provider
             : (provider as any)?.records ?? [];
-          items = [...items, ...(Array.isArray(got) ? got : [])];
+          const annotated = (Array.isArray(got) ? got : []).map((c: any) =>
+            c && typeof c === 'object' ? { ...c, __originInstanceId: originInstanceId } : c
+          );
+          items = [...items, ...annotated];
           lastError = null;
           if (opts?.instanceId) break;
         } catch (error) {
@@ -527,12 +612,19 @@ export class EvolutionMessagesService {
           const dt = new Date(String(lastTs));
           return Number.isNaN(dt.getTime()) ? null : dt.toISOString();
         })();
+        const originInstanceId = this.extractOriginInstanceId(c) ?? requestedInstancePublicId;
+        const originMeta = originInstanceId ? instanceMeta.get(originInstanceId) ?? null : null;
+        const originLabel = originMeta?.number ?? originMeta?.publicId ?? (originInstanceId ? originInstanceId : 'unknown');
         return {
           id: c?.id ?? normalized ?? Math.random().toString(36).slice(2),
           name: c?.pushName ?? c?.name ?? null,
           contact: normalized,
           remoteJid,
           avatarUrl,
+          originInstanceId: originInstanceId ?? 'unknown',
+          originNumber: originMeta?.number ?? null,
+          originProfilePicUrl: originMeta?.profilePicUrl ?? null,
+          originLabel,
           lastMessage: lastText ? { text: lastText, timestamp: tsIso ?? new Date().toISOString(), fromMe: !!(last?.key?.fromMe) } : null
         };
       })
@@ -706,6 +798,7 @@ export class EvolutionMessagesService {
       ? local.map((m: any) => ({
           id: m.wamid ?? `${normalizedPhone}-${m.timestamp?.getTime?.() ?? Date.now()}`,
           key: { id: m.wamid ?? null, fromMe: !!m.fromMe },
+          __originInstanceId: this.extractOriginInstanceId(m),
           message: m.mediaUrl
             ? { imageMessage: { url: m.mediaUrl, caption: m.caption ?? null } }
             : { conversation: m.conversation ?? null },
@@ -760,6 +853,7 @@ export class EvolutionMessagesService {
           id: m.wamid ?? phone,
           remoteJid: `${phone}@s.whatsapp.net`,
           pushName: m.pushName ?? null,
+          __originInstanceId: this.extractOriginInstanceId(m),
           lastMessage: {
             message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
             messageTimestamp: Math.floor(
@@ -787,6 +881,7 @@ export class EvolutionMessagesService {
         id: m.wamid ?? phone,
         remoteJid: `${phone}@s.whatsapp.net`,
         pushName: m.pushName ?? null,
+        __originInstanceId: this.extractOriginInstanceId(m),
         lastMessage: {
           message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
           messageTimestamp: Math.floor(

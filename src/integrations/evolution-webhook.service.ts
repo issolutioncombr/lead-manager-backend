@@ -238,6 +238,7 @@ export class EvolutionWebhookService {
           remoteJid,
           remoteJidAlt: remoteJidAlt ?? remoteJid,
           phoneRaw,
+          instanceId: createdWebhook.providerInstanceId ?? createdWebhook.instanceId ?? providerInstanceId ?? instanceRecord?.providerInstanceId ?? instanceRecord?.instanceId ?? null,
           fromMe,
           direction,
           pushName: typeof pushName === 'string' ? pushName : null,
@@ -253,6 +254,7 @@ export class EvolutionWebhookService {
           rawJson: this.redactSecrets(payload)
         },
         update: {
+          instanceId: createdWebhook.providerInstanceId ?? createdWebhook.instanceId ?? providerInstanceId ?? instanceRecord?.providerInstanceId ?? instanceRecord?.instanceId ?? null,
           fromMe,
           direction,
           remoteJidAlt: remoteJidAlt ?? remoteJid,
