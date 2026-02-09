@@ -282,16 +282,19 @@ export class EvolutionMessagesService {
         lastError = null;
       }
       if (!lastError) {
-        const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit, {
-          beforeTimestamp,
-          beforeUpdatedAt,
-          instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
-        });
-        items = [...items, ...(Array.isArray(localItems) ? localItems : [])];
+        const shouldMergeLocal = !!opts?.instanceId;
+        if (shouldMergeLocal) {
+          const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit, {
+            beforeTimestamp,
+            beforeUpdatedAt,
+            instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
+          });
+          items = [...items, ...(Array.isArray(localItems) ? localItems : [])];
+        }
         const { data } = this.buildConversationResponse(normalized, items, opts?.direction, instanceMeta, requestedInstancePublicId);
         const providerNext = this.extractProviderNextCursor(lastProvider);
         const oldest = data.length ? new Date(data[0].timestamp) : null;
-        const hasMoreLocal = oldest
+        const hasMoreLocal = shouldMergeLocal && oldest
           ? !!(await (this.prisma as any).whatsappMessage.findFirst({
               where: {
                 userId,
@@ -398,7 +401,7 @@ export class EvolutionMessagesService {
         };
       })
       .filter((e: any) => {
-        const key = `${e.wamid ?? ''}|${e.timestamp?.toISOString?.() ?? ''}`;
+        const key = e?.wamid ? String(e.wamid) : `${e.timestamp?.toISOString?.() ?? ''}|${e.conversation ?? ''}|${e.mediaUrl ?? ''}|${e.caption ?? ''}`;
         if (seenIds.has(key)) return false;
         seenIds.add(key);
         return true;
@@ -471,6 +474,7 @@ export class EvolutionMessagesService {
       throw new BadRequestException('Updates suportam apenas fonte local no momento');
     }
     const limit = Math.max(1, Math.min(1000, opts?.limit ?? 50));
+    const instanceCandidates = opts?.instanceId ? await this.resolveInstanceCandidates(userId, opts.instanceId) : [];
     const afterTimestamp = this.parseDateOrNull(opts?.afterTimestamp);
     const afterUpdatedAt = this.parseDateOrNull(opts?.afterUpdatedAt);
 
@@ -489,6 +493,7 @@ export class EvolutionMessagesService {
     const where: any = {
       userId,
       ...basePhoneWhere,
+      ...(instanceCandidates.length ? { instanceId: { in: instanceCandidates } } : {}),
       ...(cursorWhere.length ? { AND: [{ OR: cursorWhere }] } : {})
     };
 
@@ -585,11 +590,14 @@ export class EvolutionMessagesService {
         items = [];
       }
     }
-    const localChats = await this.readLocalChatsCached(userId, opts?.limit ?? 500, {
-      instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
-    });
-    if (localChats.length) {
-      items = [...items, ...localChats];
+    const shouldIncludeLocal = !useProvider || opts?.source === 'local' || !!opts?.instanceId || items.length === 0;
+    if (shouldIncludeLocal) {
+      const localChats = await this.readLocalChatsCached(userId, opts?.limit ?? 500, {
+        instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
+      });
+      if (localChats.length) {
+        items = [...items, ...localChats];
+      }
     }
     const dataRaw = items
       .map((c: any) => {
