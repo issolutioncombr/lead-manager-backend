@@ -52,3 +52,5 @@
 > Para receber transacoes eh necessario que o app tenha acesso ao escopo `https://uri.paypal.com/services/reporting`. Caso o consentimento retorne "escopo invalido", solicite a habilitacao do Transaction Search no suporte PayPal ou utilize apenas `openid profile email offline_access` ate a aprovacao.
 
 ATENCAO: Tokens e refresh tokens sao persistidos na base; considere criptografia em repouso e mantenha o `.env` seguro.
+
+<!-- sync-marker -->
