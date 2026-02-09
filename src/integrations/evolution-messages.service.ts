@@ -69,13 +69,14 @@ export class EvolutionMessagesService {
     return `${digits.slice(0, 2)}*****${digits.slice(-2)}`;
   }
 
-  private async readLocalChatsCached(userId: string, limit: number): Promise<any[]> {
+  private async readLocalChatsCached(userId: string, limit: number, opts?: { instanceIds?: string[] }): Promise<any[]> {
     const normalizedLimit = Math.max(10, Math.min(2000, limit));
-    const key = `${userId}:${normalizedLimit}`;
+    const instKey = (opts?.instanceIds ?? []).filter(Boolean).sort().join(',') || 'any';
+    const key = `${userId}:${normalizedLimit}:${instKey}`;
     const now = Date.now();
     const cached = this.chatsCache.get(key);
     if (cached && cached.expiresAt > now) return cached.items;
-    const items = await this.readLocalChatsAsProviderItems(userId, normalizedLimit);
+    const items = await this.readLocalChatsAsProviderItems(userId, normalizedLimit, opts);
     this.chatsCache.set(key, { expiresAt: now + 3000, items });
     return items;
   }
@@ -224,6 +225,7 @@ export class EvolutionMessagesService {
     }
     const instanceMeta = await this.getInstanceMetaMap(userId);
     const requestedInstancePublicId = opts?.instanceId ? (instanceMeta.get(opts.instanceId)?.publicId ?? opts.instanceId) : null;
+    const requestedInstanceCandidates = opts?.instanceId ? await this.resolveInstanceCandidates(userId, opts.instanceId) : [];
     const limit = Math.max(1, Math.min(1000, opts?.limit ?? 50));
     const beforeTimestamp = this.parseDateOrNull(opts?.beforeTimestamp);
     const beforeUpdatedAt = this.parseDateOrNull(opts?.beforeUpdatedAt);
@@ -280,7 +282,11 @@ export class EvolutionMessagesService {
         lastError = null;
       }
       if (!lastError) {
-        const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
+        const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit, {
+          beforeTimestamp,
+          beforeUpdatedAt,
+          instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
+        });
         items = [...items, ...(Array.isArray(localItems) ? localItems : [])];
         const { data } = this.buildConversationResponse(normalized, items, opts?.direction, instanceMeta, requestedInstancePublicId);
         const providerNext = this.extractProviderNextCursor(lastProvider);
@@ -294,6 +300,7 @@ export class EvolutionMessagesService {
                   { remoteJid: `${normalized}@s.whatsapp.net` },
                   { remoteJidAlt: `${normalized}@s.whatsapp.net` }
                 ],
+                ...(requestedInstanceCandidates.length ? { instanceId: { in: requestedInstanceCandidates } } : {}),
                 timestamp: { lt: oldest }
               },
               select: { id: true }
@@ -313,10 +320,18 @@ export class EvolutionMessagesService {
         this.logger.warn(
           `Falha ao ler conversa no provider; usando fallback local. userId=${userId} phone=${this.maskPhone(normalized)} instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'} durationMs=${Date.now() - startedAt}`
         );
-        items = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
+        items = await this.readLocalConversationAsProviderItems(userId, normalized, limit, {
+          beforeTimestamp,
+          beforeUpdatedAt,
+          instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
+        });
       }
     } else {
-      items = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
+      items = await this.readLocalConversationAsProviderItems(userId, normalized, limit, {
+        beforeTimestamp,
+        beforeUpdatedAt,
+        instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
+      });
     }
     const { data } = this.buildConversationResponse(normalized, items, opts?.direction, instanceMeta, requestedInstancePublicId);
     const oldest = data.length ? new Date(data[0].timestamp) : null;
@@ -330,6 +345,7 @@ export class EvolutionMessagesService {
             { remoteJid: `${normalized}@s.whatsapp.net` },
             { remoteJidAlt: `${normalized}@s.whatsapp.net` }
           ],
+          ...(requestedInstanceCandidates.length ? { instanceId: { in: requestedInstanceCandidates } } : {}),
           timestamp: { lt: oldest }
         },
         select: { id: true }
@@ -514,6 +530,7 @@ export class EvolutionMessagesService {
     let items: any[] = [];
     const instanceMeta = await this.getInstanceMetaMap(userId);
     const requestedInstancePublicId = opts?.instanceId ? (instanceMeta.get(opts.instanceId)?.publicId ?? opts.instanceId) : null;
+    const requestedInstanceCandidates = opts?.instanceId ? await this.resolveInstanceCandidates(userId, opts.instanceId) : [];
     const useProvider = opts?.source === 'provider'
       ? true
       : opts?.source === 'local'
@@ -568,7 +585,9 @@ export class EvolutionMessagesService {
         items = [];
       }
     }
-    const localChats = await this.readLocalChatsCached(userId, opts?.limit ?? 500);
+    const localChats = await this.readLocalChatsCached(userId, opts?.limit ?? 500, {
+      instanceIds: requestedInstanceCandidates.length ? requestedInstanceCandidates : undefined
+    });
     if (localChats.length) {
       items = [...items, ...localChats];
     }
@@ -784,7 +803,7 @@ export class EvolutionMessagesService {
     userId: string,
     normalizedPhone: string,
     limit: number,
-    opts?: { beforeTimestamp?: Date | null; beforeUpdatedAt?: Date | null }
+    opts?: { beforeTimestamp?: Date | null; beforeUpdatedAt?: Date | null; instanceIds?: string[] }
   ): Promise<any[]> {
     const cursorWhere: any[] = [];
     if (opts?.beforeTimestamp) cursorWhere.push({ timestamp: { lt: opts.beforeTimestamp } });
@@ -797,6 +816,7 @@ export class EvolutionMessagesService {
           { remoteJid: `${normalizedPhone}@s.whatsapp.net` },
           { remoteJidAlt: `${normalizedPhone}@s.whatsapp.net` }
         ],
+        ...(opts?.instanceIds?.length ? { instanceId: { in: opts.instanceIds } } : {}),
         ...(cursorWhere.length ? { AND: [{ OR: cursorWhere }] } : {})
       },
       orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
@@ -821,11 +841,15 @@ export class EvolutionMessagesService {
       : [];
   }
 
-  private async readLocalChatsAsProviderItems(userId: string, limit: number): Promise<any[]> {
+  private async readLocalChatsAsProviderItems(userId: string, limit: number, opts?: { instanceIds?: string[] }): Promise<any[]> {
     const take = Math.max(10, Math.min(2000, limit));
     const model = (this.prisma as any).whatsappMessage;
     const rows = await model.findMany({
-      where: { userId, remoteJid: { endsWith: '@s.whatsapp.net' } },
+      where: {
+        userId,
+        remoteJid: { endsWith: '@s.whatsapp.net' },
+        ...(opts?.instanceIds?.length ? { instanceId: { in: opts.instanceIds } } : {})
+      },
       orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
       take: Math.max(200, Math.min(5000, take * 10))
     });
