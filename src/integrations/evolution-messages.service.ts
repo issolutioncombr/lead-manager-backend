@@ -152,20 +152,40 @@ export class EvolutionMessagesService {
     return { id: wamid, status: 'failed' };
   }
 
-  async listConversation(userId: string, phone: string, opts?: { direction?: 'inbound' | 'outbound'; page?: number; limit?: number; instanceId?: string; remoteJid?: string; source?: 'provider' | 'local' }) {
+  async listConversation(
+    userId: string,
+    phone: string,
+    opts?: {
+      direction?: 'inbound' | 'outbound';
+      page?: number;
+      limit?: number;
+      instanceId?: string;
+      remoteJid?: string;
+      source?: 'provider' | 'local';
+      beforeTimestamp?: string;
+      beforeUpdatedAt?: string;
+      cursor?: string;
+    }
+  ) {
     const normalized = normalizePhone(phone);
     if (!normalized || normalized.length < 7) {
       throw new BadRequestException('Telefone inválido');
     }
-    const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
+    const limit = Math.max(1, Math.min(1000, opts?.limit ?? 50));
+    const beforeTimestamp = this.parseDateOrNull(opts?.beforeTimestamp);
+    const beforeUpdatedAt = this.parseDateOrNull(opts?.beforeUpdatedAt);
     let items: any[] = [];
     const useProvider = opts?.source === 'provider'
       ? true
       : opts?.source === 'local'
       ? false
       : (process.env.EVOLUTION_PROVIDER_READ ?? 'false').toLowerCase() === 'true';
+    this.logger.log(
+      `listConversation start userId=${userId} phone=${this.maskPhone(normalized)} instanceId=${opts?.instanceId ?? 'auto'} source=${opts?.source ?? (useProvider ? 'provider' : 'local')} limit=${limit} beforeTimestamp=${beforeTimestamp ? beforeTimestamp.toISOString() : '-'} cursor=${opts?.cursor ? 'yes' : 'no'}`
+    );
     if (useProvider) {
       let lastError: unknown = null;
+      let lastProvider: any = null;
       const instanceCandidates = await this.resolveInstanceCandidates(userId, opts?.instanceId);
       const startedAt = Date.now();
       for (const instanceId of instanceCandidates) {
@@ -179,15 +199,18 @@ export class EvolutionMessagesService {
               instanceId: providerInstanceName,
               where: { key: { remoteJid } },
               limit,
-              token: token ?? undefined
+              token: token ?? undefined,
+              cursor: opts?.cursor
             });
           } catch (e) {
             provider = await this.evolution.getConversation(`+${normalized}`, {
               instanceId: providerInstanceName,
               limit,
+              cursor: opts?.cursor,
               token: token ?? undefined
             });
           }
+          lastProvider = provider;
           const got = this.extractProviderConversationItems(provider);
           items = [...items, ...(Array.isArray(got) ? got : [])];
           lastError = null;
@@ -200,20 +223,71 @@ export class EvolutionMessagesService {
         lastError = null;
       }
       if (!lastError) {
-        const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
+        const localItems = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
         items = [...items, ...(Array.isArray(localItems) ? localItems : [])];
+        const { data } = this.buildConversationResponse(normalized, items, opts?.direction);
+        const providerNext = this.extractProviderNextCursor(lastProvider);
+        const oldest = data.length ? new Date(data[0].timestamp) : null;
+        const hasMoreLocal = oldest
+          ? !!(await (this.prisma as any).whatsappMessage.findFirst({
+              where: {
+                userId,
+                OR: [
+                  { phoneRaw: normalized },
+                  { remoteJid: `${normalized}@s.whatsapp.net` },
+                  { remoteJidAlt: `${normalized}@s.whatsapp.net` }
+                ],
+                timestamp: { lt: oldest }
+              },
+              select: { id: true }
+            }))
+          : false;
+        return {
+          data,
+          total: data.length,
+          page: 1,
+          limit,
+          hasMore: providerNext ? true : hasMoreLocal,
+          nextCursor: providerNext ?? (hasMoreLocal && oldest ? oldest.toISOString() : null)
+        };
       }
       if (lastError) {
         const status = lastError instanceof HttpException ? lastError.getStatus() : null;
         this.logger.warn(
           `Falha ao ler conversa no provider; usando fallback local. userId=${userId} phone=${this.maskPhone(normalized)} instanceId=${opts?.instanceId ?? 'auto'} status=${status ?? 'unknown'} durationMs=${Date.now() - startedAt}`
         );
-        items = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
+        items = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
       }
     } else {
-      items = await this.readLocalConversationAsProviderItems(userId, normalized, limit);
+      items = await this.readLocalConversationAsProviderItems(userId, normalized, limit, { beforeTimestamp, beforeUpdatedAt });
     }
-    // Dedup por wamid + timestamp
+    const { data } = this.buildConversationResponse(normalized, items, opts?.direction);
+    const oldest = data.length ? new Date(data[0].timestamp) : null;
+    const hasMore =
+      !!oldest &&
+      !!(await (this.prisma as any).whatsappMessage.findFirst({
+        where: {
+          userId,
+          OR: [
+            { phoneRaw: normalized },
+            { remoteJid: `${normalized}@s.whatsapp.net` },
+            { remoteJidAlt: `${normalized}@s.whatsapp.net` }
+          ],
+          timestamp: { lt: oldest }
+        },
+        select: { id: true }
+      }));
+    return {
+      data,
+      total: data.length,
+      page: 1,
+      limit,
+      hasMore,
+      nextCursor: hasMore && oldest ? oldest.toISOString() : null
+    };
+  }
+
+  private buildConversationResponse(normalizedPhone: string, items: any[], direction?: 'inbound' | 'outbound') {
     const seenIds = new Set<string>();
     const data = items
       .map((m: any) => {
@@ -224,9 +298,8 @@ export class EvolutionMessagesService {
         const mediaUrl = msg?.imageMessage?.url ?? msg?.videoMessage?.url ?? msg?.documentMessage?.url ?? null;
         const type = m?.messageType ?? (mediaUrl ? 'media' : (text ? 'text' : null));
         const ts = m?.messageTimestamp ?? m?.timestamp ?? Date.now() / 1000;
-        const id = m?.id ?? key?.id ?? m?.wamid ?? `${normalized}-${ts}`;
-        const entry = {
-          id: m?.id ?? key?.id ?? m?.wamid ?? `${normalized}-${ts}`,
+        return {
+          id: m?.id ?? key?.id ?? m?.wamid ?? `${normalizedPhone}-${ts}`,
           wamid: key?.id ?? m?.wamid ?? null,
           fromMe,
           direction: fromMe ? 'OUTBOUND' : 'INBOUND',
@@ -237,9 +310,8 @@ export class EvolutionMessagesService {
           deliveryStatus: m?.deliveryStatus ?? null,
           timestamp: new Date((Number(ts) || Math.floor(Date.now() / 1000)) * 1000),
           pushName: m?.pushName ?? m?.name ?? null,
-          phoneRaw: normalized
+          phoneRaw: normalizedPhone
         };
-        return entry;
       })
       .filter((e: any) => {
         const key = `${e.wamid ?? ''}|${e.timestamp?.toISOString?.() ?? ''}`;
@@ -247,18 +319,14 @@ export class EvolutionMessagesService {
         seenIds.add(key);
         return true;
       })
-      .filter((entry: any) => {
-        const hasContent = !!(entry.conversation || entry.caption || entry.mediaUrl || entry.messageType);
-        return hasContent;
-      })
-      .filter((entry: any) => (opts?.direction === 'inbound' ? !entry.fromMe : opts?.direction === 'outbound' ? entry.fromMe : true));
+      .filter((entry: any) => !!(entry.conversation || entry.caption || entry.mediaUrl || entry.messageType))
+      .filter((entry: any) => (direction === 'inbound' ? !entry.fromMe : direction === 'outbound' ? entry.fromMe : true));
     data.sort((a: any, b: any) => {
       const ta = a?.timestamp instanceof Date ? a.timestamp.getTime() : new Date(a?.timestamp).getTime();
       const tb = b?.timestamp instanceof Date ? b.timestamp.getTime() : new Date(b?.timestamp).getTime();
       return ta - tb;
     });
-    // Provider response may not support pagination; return current slice
-    return { data, total: data.length, page: 1, limit };
+    return { data };
   }
 
   async getProfilePicUrl(
@@ -307,7 +375,7 @@ export class EvolutionMessagesService {
     if (opts?.source === 'provider') {
       throw new BadRequestException('Updates suportam apenas fonte local no momento');
     }
-    const limit = Math.max(1, Math.min(200, opts?.limit ?? 50));
+    const limit = Math.max(1, Math.min(1000, opts?.limit ?? 50));
     const afterTimestamp = this.parseDateOrNull(opts?.afterTimestamp);
     const afterUpdatedAt = this.parseDateOrNull(opts?.afterUpdatedAt);
 
@@ -484,12 +552,14 @@ export class EvolutionMessagesService {
         byContact.set(row.contact, row);
       }
     }
-    const data = Array.from(byContact.values());
+    let data = Array.from(byContact.values());
     data.sort((a: any, b: any) => {
       const ta = a?.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0;
       const tb = b?.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0;
       return tb - ta;
     });
+
+    data = await this.enrichChatAvatars(userId, data, { instanceId: opts?.instanceId });
 
     const contacts = data.map((d: any) => d.contact).filter(Boolean);
     if (contacts.length) {
@@ -506,6 +576,22 @@ export class EvolutionMessagesService {
       return data.map((d: any) => ({ ...d, name: nameByContact.get(d.contact) ?? d.name }));
     }
     return data;
+  }
+
+  private async enrichChatAvatars(userId: string, items: any[], opts?: { instanceId?: string }) {
+    const candidates = (Array.isArray(items) ? items : [])
+      .filter((c: any) => !c?.avatarUrl && typeof c?.remoteJid === 'string' && c.remoteJid.includes('@'))
+      .slice(0, 20);
+    if (!candidates.length) return items;
+    await Promise.all(
+      candidates.map(async (c: any) => {
+        try {
+          const url = await this.getProfilePicUrl(userId, { jid: c.remoteJid, instanceId: opts?.instanceId });
+          if (url) c.avatarUrl = url;
+        } catch {}
+      })
+    );
+    return items;
   }
 
   private async validateMedia(url: string): Promise<{ ok: boolean; mediaType: 'image' | 'video' | 'document' }> {
@@ -593,7 +679,15 @@ export class EvolutionMessagesService {
     return this.uniqueStrings([record?.instanceId, record?.providerInstanceId]);
   }
 
-  private async readLocalConversationAsProviderItems(userId: string, normalizedPhone: string, limit: number): Promise<any[]> {
+  private async readLocalConversationAsProviderItems(
+    userId: string,
+    normalizedPhone: string,
+    limit: number,
+    opts?: { beforeTimestamp?: Date | null; beforeUpdatedAt?: Date | null }
+  ): Promise<any[]> {
+    const cursorWhere: any[] = [];
+    if (opts?.beforeTimestamp) cursorWhere.push({ timestamp: { lt: opts.beforeTimestamp } });
+    if (opts?.beforeUpdatedAt) cursorWhere.push({ updatedAt: { lt: opts.beforeUpdatedAt } });
     const local = await (this.prisma as any).whatsappMessage.findMany({
       where: {
         userId,
@@ -601,9 +695,10 @@ export class EvolutionMessagesService {
           { phoneRaw: normalizedPhone },
           { remoteJid: `${normalizedPhone}@s.whatsapp.net` },
           { remoteJidAlt: `${normalizedPhone}@s.whatsapp.net` }
-        ]
+        ],
+        ...(cursorWhere.length ? { AND: [{ OR: cursorWhere }] } : {})
       },
-      orderBy: { timestamp: 'desc' },
+      orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
       take: limit
     });
     local.reverse();
@@ -717,6 +812,25 @@ export class EvolutionMessagesService {
       if (Array.isArray(c)) return c;
     }
     return [];
+  }
+
+  private extractProviderNextCursor(provider: unknown): string | null {
+    const p: any = provider ?? {};
+    const candidates = [
+      p?.nextCursor,
+      p?.cursor,
+      p?.pageCursor,
+      p?.nextPageCursor,
+      p?.paging?.next,
+      p?.pagination?.cursor,
+      p?.messages?.nextCursor,
+      p?.messages?.cursor
+    ];
+    for (const c of candidates) {
+      if (typeof c === 'string' && c.trim()) return c.trim();
+      if (typeof c === 'number' && Number.isFinite(c)) return String(c);
+    }
+    return null;
   }
 
   private parseDateOrNull(value: string | undefined): Date | null {

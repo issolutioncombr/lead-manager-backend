@@ -40,7 +40,10 @@ export class EvolutionMessagesController {
       limit: query.limit,
       instanceId: query.instanceId,
       remoteJid: query.remoteJid,
-      source: query.source
+      source: query.source,
+      beforeTimestamp: query.beforeTimestamp,
+      beforeUpdatedAt: query.beforeUpdatedAt,
+      cursor: query.cursor
     });
   }
 

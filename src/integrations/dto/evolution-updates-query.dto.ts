@@ -18,7 +18,7 @@ export class EvolutionUpdatesQueryDto {
   @Transform(({ value }) => parseInt(value, 10))
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(1000)
   limit?: number;
 
   @IsOptional()
@@ -29,4 +29,3 @@ export class EvolutionUpdatesQueryDto {
   @IsString()
   afterUpdatedAt?: string;
 }
-

@@ -19,6 +19,18 @@ export class EvolutionConversationQueryDto {
   direction?: 'inbound' | 'outbound';
 
   @IsOptional()
+  @IsString()
+  beforeTimestamp?: string;
+
+  @IsOptional()
+  @IsString()
+  beforeUpdatedAt?: string;
+
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @IsOptional()
   @Transform(({ value }) => parseInt(value, 10))
   @IsInt()
   @Min(1)
@@ -28,7 +40,7 @@ export class EvolutionConversationQueryDto {
   @Transform(({ value }) => parseInt(value, 10))
   @IsInt()
   @Min(1)
-  @Max(200)
+  @Max(1000)
   limit?: number;
 
   @IsOptional()
