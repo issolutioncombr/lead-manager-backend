@@ -361,7 +361,7 @@ export class EvolutionMessagesService {
         const mediaUrl = msg?.imageMessage?.url ?? msg?.videoMessage?.url ?? msg?.documentMessage?.url ?? null;
         const type = m?.messageType ?? (mediaUrl ? 'media' : (text ? 'text' : null));
         const ts = m?.messageTimestamp ?? m?.timestamp ?? Date.now() / 1000;
-        const originInstanceId = fromMe ? (this.extractOriginInstanceId(m) ?? defaultOriginInstanceId ?? null) : null;
+        const originInstanceId = this.extractOriginInstanceId(m) ?? defaultOriginInstanceId ?? null;
         const originMeta = originInstanceId ? instanceMeta.get(originInstanceId) ?? null : null;
         return {
           id: m?.id ?? key?.id ?? m?.wamid ?? `${normalizedPhone}-${ts}`,
@@ -630,21 +630,30 @@ export class EvolutionMessagesService {
       })
       .filter((x: any) => !!x?.contact);
 
-    const byContact = new Map<string, any>();
+    const byKey = new Map<string, any>();
+    const buildKey = (row: any) => {
+      const contact = String(row?.contact ?? '').trim();
+      if (!contact) return '';
+      if (opts?.instanceId) return contact;
+      const origin = String(row?.originInstanceId ?? 'unknown').trim() || 'unknown';
+      return `${contact}|${origin}`;
+    };
     for (const row of dataRaw) {
       if (!row) continue;
-      const prev = byContact.get(row.contact);
+      const key = buildKey(row);
+      if (!key) continue;
+      const prev = byKey.get(key);
       if (!prev) {
-        byContact.set(row.contact, row);
+        byKey.set(key, row);
         continue;
       }
       const a = prev?.lastMessage?.timestamp ? new Date(prev.lastMessage.timestamp).getTime() : 0;
       const b = row?.lastMessage?.timestamp ? new Date(row.lastMessage.timestamp).getTime() : 0;
       if ((Number.isFinite(b) ? b : 0) >= (Number.isFinite(a) ? a : 0)) {
-        byContact.set(row.contact, row);
+        byKey.set(key, row);
       }
     }
-    let data = Array.from(byContact.values());
+    let data = Array.from(byKey.values());
     data.sort((a: any, b: any) => {
       const ta = a?.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0;
       const tb = b?.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0;
@@ -815,73 +824,27 @@ export class EvolutionMessagesService {
   private async readLocalChatsAsProviderItems(userId: string, limit: number): Promise<any[]> {
     const take = Math.max(10, Math.min(2000, limit));
     const model = (this.prisma as any).whatsappMessage;
-    if (typeof model?.groupBy === 'function') {
-      const grouped = await model.groupBy({
-        by: ['remoteJid'],
-        where: { userId, remoteJid: { endsWith: '@s.whatsapp.net' } },
-        _max: { timestamp: true, updatedAt: true },
-        orderBy: [{ _max: { timestamp: 'desc' } }],
-        take
-      });
-      const jids: string[] = [];
-      for (const g of grouped ?? []) {
-        const jid = String(g?.remoteJid ?? '').trim();
-        if (jid) jids.push(jid);
-      }
-      if (!jids.length) return [];
-      const rows = await model.findMany({
-        where: { userId, remoteJid: { in: jids } },
-        orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
-        take: jids.length * 5
-      });
-      const byPhone = new Map<string, any>();
-      for (const m of rows ?? []) {
-        const phone =
-          String(m?.phoneRaw ?? '').replace(/\D+/g, '') ||
-          String(m?.remoteJid ?? '').replace('@s.whatsapp.net', '').replace(/\D+/g, '');
-        if (!phone || byPhone.has(phone)) continue;
-        byPhone.set(phone, m);
-        if (byPhone.size >= take) break;
-      }
-      const items: any[] = [];
-      for (const jid of jids) {
-        const phone = jid.replace('@s.whatsapp.net', '').replace(/\D+/g, '');
-        const m = byPhone.get(phone);
-        if (!m) continue;
-        if (phone.length < 7 || phone.length > 15) continue;
-        items.push({
-          id: m.wamid ?? phone,
-          remoteJid: `${phone}@s.whatsapp.net`,
-          pushName: m.pushName ?? null,
-          __originInstanceId: this.extractOriginInstanceId(m),
-          lastMessage: {
-            message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
-            messageTimestamp: Math.floor(
-              (m.timestamp instanceof Date ? m.timestamp.getTime() : new Date(m.timestamp).getTime()) / 1000
-            ),
-            key: { fromMe: !!m.fromMe }
-          }
-        });
-      }
-      return items;
-    }
-
-    const recent = await model.findMany({
-      where: { userId },
-      orderBy: { timestamp: 'desc' },
-      take: Math.max(10, Math.min(500, take))
+    const rows = await model.findMany({
+      where: { userId, remoteJid: { endsWith: '@s.whatsapp.net' } },
+      orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],
+      take: Math.max(200, Math.min(5000, take * 10))
     });
     const seen = new Set<string>();
     const items: any[] = [];
-    for (const m of recent) {
-      const phone = String(m?.phoneRaw ?? '').replace(/\D+/g, '');
-      if (!phone || seen.has(phone)) continue;
-      seen.add(phone);
+    for (const m of rows ?? []) {
+      const phone =
+        String(m?.phoneRaw ?? '').replace(/\D+/g, '') ||
+        String(m?.remoteJid ?? '').replace('@s.whatsapp.net', '').replace(/\D+/g, '');
+      if (!phone || phone.length < 7 || phone.length > 15) continue;
+      const originInstanceId = this.extractOriginInstanceId(m);
+      const key = `${phone}|${originInstanceId ?? 'unknown'}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       items.push({
-        id: m.wamid ?? phone,
+        id: m.wamid ?? `${phone}-${originInstanceId ?? 'unknown'}`,
         remoteJid: `${phone}@s.whatsapp.net`,
         pushName: m.pushName ?? null,
-        __originInstanceId: this.extractOriginInstanceId(m),
+        __originInstanceId: originInstanceId,
         lastMessage: {
           message: m.mediaUrl ? { imageMessage: { caption: m.caption ?? null } } : { conversation: m.conversation ?? null },
           messageTimestamp: Math.floor(
@@ -890,6 +853,7 @@ export class EvolutionMessagesService {
           key: { fromMe: !!m.fromMe }
         }
       });
+      if (items.length >= take) break;
     }
     return items;
   }

@@ -209,4 +209,44 @@ describe('EvolutionMessagesService (TS)', () => {
     expect(b).toBe('https://cdn.example.com/a.jpg');
     expect(evolution.fetchProfilePicUrl).toHaveBeenCalledTimes(1);
   });
+
+  it('listChats em "todas instâncias" permite o mesmo destino com origens diferentes', async () => {
+    prisma.evolutionInstance.findMany = jest.fn(async () => [
+      { instanceId: 'instA', providerInstanceId: null, metadata: { number: '5511111111111', profilePicUrl: null } },
+      { instanceId: 'instB', providerInstanceId: null, metadata: { number: '5522222222222', profilePicUrl: null } }
+    ]) as any;
+    prisma.whatsappMessage.findMany = jest.fn(async () => [
+      {
+        wamid: 'wamid-a',
+        phoneRaw: '5511999999999',
+        remoteJid: '5511999999999@s.whatsapp.net',
+        instanceId: 'instA',
+        fromMe: false,
+        conversation: 'oi',
+        mediaUrl: null,
+        caption: null,
+        timestamp: new Date('2026-02-04T09:00:00.000Z'),
+        updatedAt: new Date('2026-02-04T09:00:00.000Z'),
+        pushName: 'Fulano'
+      },
+      {
+        wamid: 'wamid-b',
+        phoneRaw: '5511999999999',
+        remoteJid: '5511999999999@s.whatsapp.net',
+        instanceId: 'instB',
+        fromMe: false,
+        conversation: 'oi 2',
+        mediaUrl: null,
+        caption: null,
+        timestamp: new Date('2026-02-04T09:00:01.000Z'),
+        updatedAt: new Date('2026-02-04T09:00:01.000Z'),
+        pushName: 'Fulano'
+      }
+    ]) as any;
+
+    const chats = await svc.listChats('user1', { source: 'local', limit: 50 });
+    const sameContact = chats.filter((c: any) => c.contact === '5511999999999');
+    expect(sameContact).toHaveLength(2);
+    expect(new Set(sameContact.map((c: any) => c.originInstanceId)).size).toBe(2);
+  });
 });
