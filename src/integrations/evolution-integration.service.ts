@@ -268,6 +268,35 @@ export class EvolutionIntegrationService {
     return stripped;
   }
 
+  private readWebhookEvents(): string[] {
+    const raw = (process.env.EVOLUTION_WEBHOOK_EVENTS ?? '').trim();
+    const normalize = (v: string) => v.trim().toUpperCase().replace(/[.\-]/g, '_');
+    const parsed = raw
+      ? raw
+          .split(/[,\s]+/)
+          .map(normalize)
+          .filter(Boolean)
+      : [];
+    if (parsed.length) return Array.from(new Set(parsed));
+    return [
+      'MESSAGES_UPSERT',
+      'MESSAGES_UPDATE',
+      'CONNECTION_UPDATE',
+      'CHATS_UPSERT',
+      'CHATS_UPDATE',
+      'CONTACTS_UPSERT',
+      'CONTACTS_UPDATE'
+    ];
+  }
+
+  private readWebhookByEvents(): boolean {
+    return (process.env.EVOLUTION_WEBHOOK_BY_EVENTS ?? 'true').toLowerCase() !== 'false';
+  }
+
+  private readWebhookBase64(): boolean {
+    return (process.env.EVOLUTION_WEBHOOK_BASE64 ?? 'true').toLowerCase() !== 'false';
+  }
+
   private async syncWebhookForInstance(userId: string, instanceId: string, webhookUrl: string) {
     const headers: Record<string, string> = {};
     const webhookAuthorization = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
@@ -279,17 +308,39 @@ export class EvolutionIntegrationService {
       headers['x-evolution-webhook-token'] = webhookToken;
     }
     headers['Content-Type'] = process.env.EVOLUTION_WEBHOOK_CONTENT_TYPE ?? 'application/json';
+    const byEvents = this.readWebhookByEvents();
+    const base64 = this.readWebhookBase64();
+    const desiredEvents = this.readWebhookEvents();
+    const eventAttempts: string[][] = [
+      desiredEvents,
+      desiredEvents.filter((e) => e.startsWith('MESSAGES_') || e === 'CONNECTION_UPDATE'),
+      ['MESSAGES_UPSERT']
+    ].filter((arr) => arr.length > 0);
 
-    await this.evolutionService.setWebhook({
-      instanceId,
-      url: webhookUrl,
-      enabled: true,
-      byEvents: false,
-      base64: true,
-      headers,
-      events: ['MESSAGES_UPSERT']
-    });
-
+    let lastError: unknown = null;
+    for (const events of eventAttempts) {
+      for (const by of [byEvents, false]) {
+        try {
+          await this.evolutionService.setWebhook({
+            instanceId,
+            url: webhookUrl,
+            enabled: true,
+            byEvents: by,
+            base64,
+            headers,
+            events
+          });
+          lastError = null;
+          break;
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      if (!lastError) break;
+    }
+    if (lastError) {
+      throw lastError;
+    }
     const nowIso = new Date().toISOString();
     const existing = await this.evolutionModel().findFirst({ where: { userId, instanceId }, select: { id: true, metadata: true } });
     if (!existing) {
@@ -954,15 +1005,19 @@ export class EvolutionIntegrationService {
 
     headers['Content-Type'] = process.env.EVOLUTION_WEBHOOK_CONTENT_TYPE ?? 'application/json';
 
+    const byEvents = this.readWebhookByEvents();
+    const base64 = this.readWebhookBase64();
+    const events = this.readWebhookEvents();
+
     return {
       integration: 'WHATSAPP-BAILEYS',
       groupsIgnore: true,
       webhook: {
         url: webhookUrl,
-        byEvents: false,
-        base64: true,
+        byEvents,
+        base64,
         headers,
-        events: ['MESSAGES_UPSERT']
+        events
       }
     };
   }
