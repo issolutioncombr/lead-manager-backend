@@ -62,19 +62,40 @@ export class AuthService {
       throw new ConflictException('E-mail ja cadastrado.');
     }
 
+    const companyName = dto.companyName.trim();
     const hashedPassword = await bcrypt.hash(dto.password, 10);
-    const data = {
-      email: dto.email,
-      name: dto.name,
-      password: hashedPassword,
-      role: dto.role ?? 'user',
-      companyName: dto.companyName
-    } as unknown as Prisma.UserUncheckedCreateInput;
     try {
-      await this.usersService.create(data);
+      await this.prisma.$transaction(async (tx) => {
+        const company = await tx.company.create({
+          data: {
+            name: companyName,
+            cpfCnpj: dto.cpfCnpj
+          },
+          select: { id: true }
+        });
+
+        await tx.user.create({
+          data: {
+            email: dto.email,
+            name: dto.name,
+            password: hashedPassword,
+            role: dto.role ?? 'user',
+            companyName,
+            companyId: company.id
+          } as unknown as Prisma.UserUncheckedCreateInput
+        });
+      });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-        throw new ConflictException('E-mail ja cadastrado.');
+        const target = (err.meta as { target?: unknown } | undefined)?.target;
+        const targetText = Array.isArray(target) ? target.join(',') : String(target ?? '');
+        if (targetText.includes('cpfCnpj') || targetText.includes('Company_cpfCnpj_key')) {
+          throw new ConflictException('CPF/CNPJ ja cadastrado.');
+        }
+        if (targetText.includes('email') || targetText.includes('User_email_key')) {
+          throw new ConflictException('E-mail ja cadastrado.');
+        }
+        throw new ConflictException('Conflito ao criar conta.');
       }
       throw err;
     }

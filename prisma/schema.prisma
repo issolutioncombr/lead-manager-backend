@@ -40,12 +40,23 @@ model CourseLead {
   @@map("course_leads")
 }
 
+model Company {
+  id        String   @id @default(cuid())
+  name      String
+  cpfCnpj   String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users     User[]
+}
+
 model User {
   id                  String               @id @default(cuid())
   email               String               @unique
   password            String
   name                String
   companyName         String?
+  companyId           String?
+  company             Company?             @relation(fields: [companyId], references: [id])
   role                String               @default("admin")
   isApproved          Boolean              @default(false)
   isAdmin             Boolean              @default(false)
@@ -79,6 +90,8 @@ model User {
   webhookConfigs      WebhookConfig[]
   botActionLogs       BotActionLog[]
   botButtons          BotButton[]
+
+  @@index([companyId])
 }
 
 model Client {
