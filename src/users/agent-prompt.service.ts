@@ -404,4 +404,53 @@ export class AgentPromptService {
       data
     };
   }
+
+  async getPromptDispatchDailyReport(userId: string, params: { instanceId?: string; from?: string; to?: string; phoneRaw?: string; assignedBy?: string }) {
+    const { from, to } = this.parseDateRange(params.from, params.to);
+    const phone = params.phoneRaw ? this.normalizePhoneRaw(params.phoneRaw) : null;
+    const instanceKey = (params.instanceId ?? '').trim() || null;
+    const instance = instanceKey ? await this.resolveEvolutionInstanceByKey(userId, instanceKey) : null;
+    const assignedBy = (params.assignedBy ?? '').trim() || null;
+
+    const rows: any[] = await (this.prisma as any).$queryRaw(
+      Prisma.sql`
+        SELECT
+          to_char(date_trunc('day', "occurred_at"), 'YYYY-MM-DD') as "day",
+          "evolution_instance_id" as "evolutionInstanceId",
+          "agent_prompt_id" as "agentPromptId",
+          "prompt_name" as "promptName",
+          "assigned_by" as "assignedBy",
+          COUNT(*)::bigint as "events",
+          COUNT(DISTINCT "phone_raw")::bigint as "destinations"
+        FROM "agent_prompt_dispatch_logs"
+        WHERE "userId" = ${userId}
+          AND "occurred_at" >= ${from}
+          AND "occurred_at" <= ${to}
+          ${instance ? Prisma.sql`AND "evolution_instance_id" = ${instance.id}` : Prisma.empty}
+          ${phone ? Prisma.sql`AND "phone_raw" = ${phone}` : Prisma.empty}
+          ${assignedBy ? Prisma.sql`AND "assigned_by" = ${assignedBy}` : Prisma.empty}
+        GROUP BY "day", "evolution_instance_id", "agent_prompt_id", "prompt_name", "assigned_by"
+        ORDER BY "day" ASC
+      `
+    );
+
+    const data = rows.map((r) => ({
+      day: r.day as string,
+      evolutionInstanceId: r.evolutionInstanceId as string,
+      agentPromptId: (r.agentPromptId as string | null) ?? null,
+      promptName: (r.promptName as string | null) ?? null,
+      assignedBy: r.assignedBy as string,
+      events: typeof r.events === 'bigint' ? Number(r.events) : Number(r.events ?? 0),
+      destinations: typeof r.destinations === 'bigint' ? Number(r.destinations) : Number(r.destinations ?? 0)
+    }));
+
+    return {
+      from,
+      to,
+      instance,
+      phoneRaw: phone,
+      assignedBy,
+      data
+    };
+  }
 }

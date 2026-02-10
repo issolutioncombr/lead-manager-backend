@@ -107,4 +107,16 @@ export class AgentPromptController {
   ) {
     return await this.agentPromptService.getPromptDispatchReport(user.userId, { instanceId, from, to, phoneRaw });
   }
+
+  @Get('reports/dispatches/daily')
+  async getDispatchDailyReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('instanceId') instanceId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('phoneRaw') phoneRaw?: string,
+    @Query('assignedBy') assignedBy?: string
+  ) {
+    return await this.agentPromptService.getPromptDispatchDailyReport(user.userId, { instanceId, from, to, phoneRaw, assignedBy });
+  }
 }
