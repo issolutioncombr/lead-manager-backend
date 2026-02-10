@@ -171,12 +171,15 @@ export class EvolutionIntegrationService {
     };
 
     if (existingById) {
+      const { resolvedWebhookUrl } = await this.resolveAutoSlotConfiguration(userId);
+      const mergedMeta = this.mergeMetadata(existingById.metadata, { ...metadataPatch, webhookUrl: resolvedWebhookUrl });
       await this.updateInstance(existingById, {
         status,
         connectedAt: status === 'connected' ? existingById.connectedAt ?? new Date() : null,
-        metadata: metadataPatch,
+        metadata: mergedMeta,
         providerInstanceId
       });
+      await this.syncWebhookForInstance(userId, existingById.instanceId, resolvedWebhookUrl);
 
       return {
         instanceId: existingById.instanceId,
@@ -192,7 +195,8 @@ export class EvolutionIntegrationService {
     });
 
     if (existingGlobal) {
-      const mergedMeta = this.mergeMetadata(existingGlobal.metadata, metadataPatch);
+      const { resolvedWebhookUrl } = await this.resolveAutoSlotConfiguration(userId);
+      const mergedMeta = this.mergeMetadata(existingGlobal.metadata, { ...metadataPatch, webhookUrl: resolvedWebhookUrl });
       const updated = await (this.prisma as any).evolutionInstance.update({
         where: { id: existingGlobal.id },
         data: {
@@ -203,6 +207,7 @@ export class EvolutionIntegrationService {
           connectedAt: status === 'connected' ? existingGlobal.connectedAt ?? new Date() : null
         }
       });
+      await this.syncWebhookForInstance(userId, updated.instanceId, resolvedWebhookUrl);
 
       return {
         instanceId: updated.instanceId,
@@ -213,15 +218,17 @@ export class EvolutionIntegrationService {
       };
     }
 
+    const { resolvedWebhookUrl } = await this.resolveAutoSlotConfiguration(userId);
     await this.evolutionModel().create({
       data: {
         userId,
         instanceId: resolvedInstanceId,
         providerInstanceId,
         status,
-        metadata: metadataPatch
+        metadata: { ...metadataPatch, webhookUrl: resolvedWebhookUrl }
       }
     });
+    await this.syncWebhookForInstance(userId, resolvedInstanceId, resolvedWebhookUrl);
 
     return {
       instanceId: resolvedInstanceId,
@@ -230,6 +237,71 @@ export class EvolutionIntegrationService {
       name: summary.profileName ?? instanceName,
       providerStatus: providerState
     };
+  }
+
+  async syncWebhook(userId: string, instanceKey: string) {
+    const key = (instanceKey ?? '').trim();
+    if (!key) {
+      throw new BadRequestException('Instancia invalida.');
+    }
+    const record = await this.evolutionModel().findFirst({
+      where: {
+        userId,
+        OR: [{ instanceId: key }, { providerInstanceId: key }]
+      },
+      select: { id: true, instanceId: true, providerInstanceId: true, metadata: true }
+    });
+    if (!record) {
+      throw new NotFoundException('Instancia Evolution nao encontrada.');
+    }
+    const meta: any = record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata) ? record.metadata : {};
+    const { resolvedWebhookUrl } = await this.resolveAutoSlotConfiguration(userId);
+    const webhookUrl = this.normalizeWebhookUrl(meta?.webhookUrl ?? resolvedWebhookUrl);
+    await this.syncWebhookForInstance(userId, record.instanceId, webhookUrl);
+    return { instanceId: record.instanceId, providerInstanceId: record.providerInstanceId ?? null, webhookUrl };
+  }
+
+  private normalizeWebhookUrl(value: any): string {
+    const s = typeof value === 'string' ? value.trim() : '';
+    if (!s) return s;
+    const stripped = s.replace(/^[`'"]+/, '').replace(/[`'"]+$/, '').trim();
+    return stripped;
+  }
+
+  private async syncWebhookForInstance(userId: string, instanceId: string, webhookUrl: string) {
+    const headers: Record<string, string> = {};
+    const webhookAuthorization = process.env.EVOLUTION_WEBHOOK_AUTHORIZATION;
+    if (webhookAuthorization && webhookAuthorization.length > 0) {
+      headers.authorization = webhookAuthorization;
+    }
+    const webhookToken = process.env.EVOLUTION_WEBHOOK_TOKEN;
+    if (webhookToken && webhookToken.length > 0) {
+      headers['x-evolution-webhook-token'] = webhookToken;
+    }
+    headers['Content-Type'] = process.env.EVOLUTION_WEBHOOK_CONTENT_TYPE ?? 'application/json';
+
+    await this.evolutionService.setWebhook({
+      instanceId,
+      url: webhookUrl,
+      enabled: true,
+      byEvents: false,
+      base64: true,
+      headers,
+      events: ['MESSAGES_UPSERT']
+    });
+
+    const nowIso = new Date().toISOString();
+    const existing = await this.evolutionModel().findFirst({ where: { userId, instanceId }, select: { id: true, metadata: true } });
+    if (!existing) {
+      throw new NotFoundException('Instancia Evolution nao encontrada para sincronizar webhook.');
+    }
+    const meta: any = existing?.metadata && typeof existing.metadata === 'object' && !Array.isArray(existing.metadata) ? existing.metadata : {};
+    const patched = {
+      ...meta,
+      webhookUrl,
+      lastWebhookSyncAt: nowIso
+    };
+    await this.evolutionModel().update({ where: { id: existing.id }, data: { metadata: patched } } as any);
   }
 
   private resolveSlotConfiguration(

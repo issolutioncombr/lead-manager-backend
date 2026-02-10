@@ -65,6 +65,14 @@ export class EvolutionController {
     );
   }
 
+  @Post('instances/:instanceId/webhook/sync')
+  syncWebhook(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('instanceId') instanceId: string
+  ) {
+    return this.evolutionIntegrationService.syncWebhook(user.userId, instanceId);
+  }
+
   @Post('instances/:instanceId/qr')
   refreshQr(
     @CurrentUser() user: AuthenticatedUser,

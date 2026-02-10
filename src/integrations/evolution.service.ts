@@ -204,6 +204,38 @@ export class EvolutionService {
     return match ?? null;
   }
 
+  async setWebhook(payload: {
+    instanceId: string;
+    url: string;
+    events: string[];
+    enabled?: boolean;
+    byEvents?: boolean;
+    base64?: boolean;
+    headers?: Record<string, string>;
+  }) {
+    const instanceId = (payload.instanceId ?? '').trim();
+    if (!instanceId) {
+      throw new BadRequestException('instanceId é obrigatório para configurar webhook');
+    }
+    const instanceKey = await this.resolveInstanceName(instanceId);
+    const body: Record<string, unknown> = {
+      enabled: payload.enabled ?? true,
+      url: payload.url,
+      events: payload.events,
+      webhookByEvents: payload.byEvents ?? false,
+      webhookBase64: payload.base64 ?? true,
+      byEvents: payload.byEvents ?? false,
+      base64: payload.base64 ?? true
+    };
+    if (payload.headers && Object.keys(payload.headers).length > 0) {
+      body.headers = payload.headers;
+    }
+    return this.request<any>(`/webhook/set/${encodeURIComponent(instanceKey)}`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  }
+
   private async fetchInstancesCached(): Promise<EvolutionInstanceSummary[]> {
     const now = Date.now();
     const cached = this.instancesCache.get('all');
