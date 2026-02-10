@@ -27,6 +27,10 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       evolutionInstanceAgentPrompt: {
         findMany: jest.fn(async () => [])
       },
+      evolutionInstancePromptAssignment: {
+        findUnique: jest.fn(async () => null),
+        upsert: jest.fn(async () => ({}))
+      },
       lead: {
         findFirst: jest.fn(async () => null),
         create: jest.fn(async () => ({}))
@@ -99,6 +103,10 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       evolutionInstanceAgentPrompt: {
         findMany: jest.fn(async () => [])
       },
+      evolutionInstancePromptAssignment: {
+        findUnique: jest.fn(async () => null),
+        upsert: jest.fn(async () => ({}))
+      },
       lead: {
         findFirst: jest.fn(async () => null),
         create: jest.fn(async () => ({}))
@@ -153,7 +161,7 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     expect(sentBody.instance.agent_prompt).toBe('PROMPT-DA-INST');
   });
 
-  it('envia 1 webhook por prompt vinculado (ex.: 50/50 => 2 envios)', async () => {
+  it('usa o prompt atribuído (A/B) e envia apenas 1 webhook por mensagem', async () => {
     const prisma = {
       evolutionInstance: {
         findFirst: jest.fn(async () => ({
@@ -168,15 +176,19 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
         findMany: jest.fn(async () => [
           {
             agentPromptId: 'p1',
-            percent: 50,
+            percentBps: 5000,
             agentPrompt: { id: 'p1', name: 'Prompt 1', prompt: 'TEXTO 1', active: true }
           },
           {
             agentPromptId: 'p2',
-            percent: 50,
+            percentBps: 5000,
             agentPrompt: { id: 'p2', name: 'Prompt 2', prompt: 'TEXTO 2', active: true }
           }
         ])
+      },
+      evolutionInstancePromptAssignment: {
+        findUnique: jest.fn(async () => ({ agentPromptId: 'p2', assignedBy: 'auto' })),
+        upsert: jest.fn(async () => ({}))
       },
       lead: {
         findFirst: jest.fn(async () => null),
@@ -226,11 +238,10 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       }
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(2);
-    const body1 = JSON.parse((global.fetch as any).mock.calls[0][1].body);
-    const body2 = JSON.parse((global.fetch as any).mock.calls[1][1].body);
-    expect([body1.prompt_id, body2.prompt_id].sort()).toEqual(['p1', 'p2']);
-    expect([body1.agent_prompt, body2.agent_prompt].sort()).toEqual(['TEXTO 1', 'TEXTO 2']);
-    expect([body1.percent, body2.percent].sort()).toEqual([50, 50]);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((global.fetch as any).mock.calls[0][1].body);
+    expect(body.prompt_id).toBe('p2');
+    expect(body.agent_prompt).toBe('TEXTO 2');
+    expect(body.percent).toBe(50);
   });
 });

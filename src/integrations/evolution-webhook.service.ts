@@ -313,87 +313,104 @@ export class EvolutionWebhookService {
             })
           : [];
         const legacyPrompt = (instanceRecord as any)?.agentPrompt ?? null;
-        const payloads =
-          links.length > 0
-            ? links.map((l) => ({
-                jsonrow,
-                user_id: userId,
-                company_id: null,
-                company_name: userApiKey?.companyName ?? null,
-                instance_id: createdWebhook.instanceId,
-                provider_instance_id: createdWebhook.providerInstanceId ?? null,
-                from_number: fromNumber,
-                prompt_id: l.agentPromptId,
-                prompt_name: l.agentPrompt?.name ?? null,
-                agent_prompt: normalizePrompt(l.agentPrompt?.prompt),
-                percent: l.percent,
-                dispatch_id: `${createdWebhook.id}:${l.agentPromptId}`,
-                instance: {
+        const chooseByWeight = (items: any[], key: string) => {
+          const total = items.reduce((acc, it) => acc + (Number(it?.percentBps ?? 0) || 0), 0);
+          if (total <= 0) return null;
+          const h = createHash('sha256').update(key).digest();
+          const n = h.readUInt32BE(0);
+          const pick = n % total;
+          let acc = 0;
+          for (const it of items) {
+            acc += Number(it?.percentBps ?? 0) || 0;
+            if (pick < acc) return it;
+          }
+          return items[0] ?? null;
+        };
+
+        let selectedLink: any = null;
+        let assignedBy: string | null = null;
+        if (phoneRaw && instanceRecord?.id && links.length > 0) {
+          const assignment = await (this.prisma as any).evolutionInstancePromptAssignment.findUnique({
+            where: { evolutionInstanceId_phoneRaw: { evolutionInstanceId: instanceRecord.id, phoneRaw } }
+          });
+          if (assignment?.agentPromptId) {
+            selectedLink = links.find((l: any) => l.agentPromptId === assignment.agentPromptId) ?? null;
+            assignedBy = assignment?.assignedBy ?? null;
+          }
+          if (!selectedLink) {
+            selectedLink = chooseByWeight(links, `${userId}|${instanceRecord.id}|${phoneRaw}`);
+            if (selectedLink?.agentPromptId) {
+              await (this.prisma as any).evolutionInstancePromptAssignment.upsert({
+                where: { evolutionInstanceId_phoneRaw: { evolutionInstanceId: instanceRecord.id, phoneRaw } },
+                update: { agentPromptId: selectedLink.agentPromptId, assignedBy: 'auto' },
+                create: {
                   userId,
-                  instanceId: createdWebhook.instanceId,
-                  providerInstanceId: createdWebhook.providerInstanceId,
-                  apiKey: userApiKey?.apiKey ?? null,
-                  agent_prompt: normalizePrompt(l.agentPrompt?.prompt)
-                },
-                webhooks: [baseWebhookItem]
-              }))
-            : [
-                {
-                  jsonrow,
-                  user_id: userId,
-                  company_id: null,
-                  company_name: userApiKey?.companyName ?? null,
-                  instance_id: createdWebhook.instanceId,
-                  provider_instance_id: createdWebhook.providerInstanceId ?? null,
-                  from_number: fromNumber,
-                  prompt_id: null,
-                  prompt_name: null,
-                  agent_prompt: normalizePrompt(legacyPrompt),
-                  percent: 100,
-                  dispatch_id: `${createdWebhook.id}:legacy`,
-                  instance: {
-                    userId,
-                    instanceId: createdWebhook.instanceId,
-                    providerInstanceId: createdWebhook.providerInstanceId,
-                    apiKey: userApiKey?.apiKey ?? null,
-                    agent_prompt: normalizePrompt(legacyPrompt)
-                  },
-                  webhooks: [baseWebhookItem]
+                  evolutionInstanceId: instanceRecord.id,
+                  phoneRaw,
+                  agentPromptId: selectedLink.agentPromptId,
+                  assignedBy: 'auto'
                 }
-              ];
+              });
+              assignedBy = 'auto';
+            }
+          }
+        }
+
+        const percent = selectedLink ? Number(selectedLink.percentBps ?? 0) / 100 : 100;
+        const outbound = {
+          jsonrow,
+          user_id: userId,
+          company_id: null,
+          company_name: userApiKey?.companyName ?? null,
+          instance_id: createdWebhook.instanceId,
+          provider_instance_id: createdWebhook.providerInstanceId ?? null,
+          from_number: fromNumber,
+          prompt_id: selectedLink?.agentPromptId ?? null,
+          prompt_name: selectedLink?.agentPrompt?.name ?? null,
+          agent_prompt: selectedLink ? normalizePrompt(selectedLink?.agentPrompt?.prompt) : normalizePrompt(legacyPrompt),
+          percent,
+          assignment: {
+            assigned_by: selectedLink ? assignedBy ?? 'auto' : 'legacy',
+            key: selectedLink ? `${instanceRecord?.id ?? ''}:${phoneRaw ?? ''}` : null
+          },
+          dispatch_id: selectedLink?.agentPromptId ? `${createdWebhook.id}:${selectedLink.agentPromptId}` : `${createdWebhook.id}:legacy`,
+          instance: {
+            userId,
+            instanceId: createdWebhook.instanceId,
+            providerInstanceId: createdWebhook.providerInstanceId,
+            apiKey: userApiKey?.apiKey ?? null,
+            agent_prompt: selectedLink ? normalizePrompt(selectedLink?.agentPrompt?.prompt) : normalizePrompt(legacyPrompt)
+          },
+          webhooks: [baseWebhookItem]
+        };
 
         await (this.prisma as any).webhook.update({
           where: { id: createdWebhook.id },
           data: {
-            outboundJson: this.redactSecrets(payloads),
+            outboundJson: this.redactSecrets(outbound),
             outboundUrl: n8nUrl
           }
         });
 
         const maxAttempts = 3;
-        let sentCount = 0;
-        for (const outbound of payloads) {
-          let ok = false;
-          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const resp = await this.postJson(n8nUrl, outbound);
-            if (resp.ok) {
-              ok = true;
-              break;
-            }
-            if (attempt < maxAttempts) {
-              const waitMs = 300 * attempt;
-              await new Promise((r) => setTimeout(r, waitMs));
-            }
+        let ok = false;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          const resp = await this.postJson(n8nUrl, outbound);
+          if (resp.ok) {
+            ok = true;
+            break;
           }
-          if (ok) sentCount += 1;
+          if (attempt < maxAttempts) {
+            const waitMs = 300 * attempt;
+            await new Promise((r) => setTimeout(r, waitMs));
+          }
         }
-        const allOk = sentCount === payloads.length;
         await (this.prisma as any).webhook.update({
           where: { id: createdWebhook.id },
-          data: allOk ? { status: 'sent', sentAt: new Date() } : { status: 'partial' }
+          data: ok ? { status: 'sent', sentAt: new Date() } : { status: 'partial' }
         });
-        if (!allOk) {
-          this.logger.warn('Falha ao enviar webhook ao N8N para um ou mais prompts');
+        if (!ok) {
+          this.logger.warn('Falha ao enviar webhook ao N8N após retries');
         }
       }
     }

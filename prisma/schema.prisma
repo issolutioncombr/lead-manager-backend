@@ -70,6 +70,7 @@ model User {
   legacyAgentPrompt   LegacyAgentPrompt?
   agentPrompts        AgentPrompt[]
   evolutionInstanceAgentPrompts EvolutionInstanceAgentPrompt[]
+  evolutionInstancePromptAssignments EvolutionInstancePromptAssignment[]
   webhookTokens       WebhookToken[]
   whatsappMessages    WhatsappMessage[]
   whatsappPhoneInstances WhatsappPhoneInstance[]
@@ -118,6 +119,7 @@ model EvolutionInstance {
   updatedAt          DateTime  @updatedAt
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   promptLinks        EvolutionInstanceAgentPrompt[]
+  promptAssignments  EvolutionInstancePromptAssignment[]
 
   @@index([userId])
 }
@@ -216,6 +218,7 @@ model AgentPrompt {
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   links     EvolutionInstanceAgentPrompt[]
+  assignments EvolutionInstancePromptAssignment[]
 
   @@index([userId])
   @@map("agent_prompt_library")
@@ -226,7 +229,7 @@ model EvolutionInstanceAgentPrompt {
   userId            String
   evolutionInstanceId String @map("evolution_instance_id")
   agentPromptId     String   @map("agent_prompt_id")
-  percent           Int
+  percentBps        Int      @map("percent")
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -239,6 +242,26 @@ model EvolutionInstanceAgentPrompt {
   @@index([userId])
   @@index([evolutionInstanceId])
   @@map("evolution_instance_agent_prompts")
+}
+
+model EvolutionInstancePromptAssignment {
+  id                 String   @id @default(cuid())
+  userId             String
+  evolutionInstanceId String  @map("evolution_instance_id")
+  phoneRaw           String   @map("phone_raw")
+  agentPromptId      String   @map("agent_prompt_id")
+  assignedBy         String   @default("auto") @map("assigned_by")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user               User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evolutionInstance  EvolutionInstance @relation(fields: [evolutionInstanceId], references: [id], onDelete: Cascade)
+  agentPrompt        AgentPrompt      @relation(fields: [agentPromptId], references: [id], onDelete: Cascade)
+
+  @@unique([evolutionInstanceId, phoneRaw])
+  @@index([userId, phoneRaw])
+  @@index([evolutionInstanceId])
+  @@map("evolution_instance_prompt_assignments")
 }
 
 model WebhookToken {

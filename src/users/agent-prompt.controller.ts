@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateAgentPromptLibraryDto } from 'src/users/dto/create-agent-prompt-library.dto';
+import { SetDestinationPromptAssignmentDto } from 'src/users/dto/set-destination-prompt-assignment.dto';
 import { SetInstanceAgentPromptsDto } from 'src/users/dto/set-instance-agent-prompts.dto';
 import { UpdateAgentPromptLibraryDto } from 'src/users/dto/update-agent-prompt-library.dto';
 import { UpdateAgentPromptDto } from 'src/users/dto/update-agent-prompt.dto';
@@ -75,5 +76,24 @@ export class AgentPromptController {
     @Body() dto: SetInstanceAgentPromptsDto
   ) {
     return await this.agentPromptService.setInstancePromptLinks(user.userId, instanceId, dto.items ?? []);
+  }
+
+  @Get('instances/:instanceId/destinations/:phoneRaw/assignment')
+  async getDestinationAssignment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('instanceId') instanceId: string,
+    @Param('phoneRaw') phoneRaw: string
+  ) {
+    return await this.agentPromptService.getDestinationAssignment(user.userId, instanceId, phoneRaw);
+  }
+
+  @Put('instances/:instanceId/destinations/:phoneRaw/assignment')
+  async setDestinationAssignment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('instanceId') instanceId: string,
+    @Param('phoneRaw') phoneRaw: string,
+    @Body() dto: SetDestinationPromptAssignmentDto
+  ) {
+    return await this.agentPromptService.setDestinationAssignment(user.userId, instanceId, phoneRaw, dto.promptId ?? null);
   }
 }

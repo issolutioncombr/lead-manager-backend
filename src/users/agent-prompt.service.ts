@@ -155,7 +155,7 @@ export class AgentPromptService {
       instance: inst,
       links: links.map((l: any) => ({
         promptId: l.agentPromptId,
-        percent: l.percent,
+        percent: Number(l.percentBps ?? 0) / 100,
         active: l.active,
         prompt: {
           id: l.agentPrompt.id,
@@ -177,17 +177,17 @@ export class AgentPromptService {
     const inst = await this.resolveEvolutionInstanceByKey(userId, instanceKey);
     const normalized = (Array.isArray(items) ? items : []).map((it) => ({
       promptId: String(it.promptId ?? '').trim(),
-      percent: Number(it.percent),
+      percentBps: Math.round(Number(it.percent) * 100),
       active: it.active !== undefined ? !!it.active : true
     }));
 
     for (const it of normalized) {
       if (!it.promptId) throw new BadRequestException('promptId é obrigatório');
-      if (!Number.isFinite(it.percent) || Math.floor(it.percent) !== it.percent) throw new BadRequestException('percent inválido');
-      if (it.percent < 0 || it.percent > 100) throw new BadRequestException('percent deve estar entre 0 e 100');
+      if (!Number.isFinite(it.percentBps)) throw new BadRequestException('percent inválido');
+      if (it.percentBps < 0 || it.percentBps > 10000) throw new BadRequestException('percent deve estar entre 0 e 100');
     }
-    const sum = normalized.reduce((acc, it) => acc + (it.active ? it.percent : 0), 0);
-    if (normalized.length > 0 && sum !== 100) {
+    const sum = normalized.reduce((acc, it) => acc + (it.active ? it.percentBps : 0), 0);
+    if (normalized.length > 0 && sum !== 10000) {
       throw new BadRequestException('A soma dos percentuais ativos deve ser 100');
     }
     const ids = Array.from(new Set(normalized.map((i) => i.promptId)));
@@ -205,7 +205,7 @@ export class AgentPromptService {
             userId,
             evolutionInstanceId: inst.id,
             agentPromptId: it.promptId,
-            percent: it.percent,
+            percent: it.percentBps,
             active: it.active
           }))
         });
@@ -213,5 +213,54 @@ export class AgentPromptService {
     });
 
     return await this.listInstancePromptLinks(userId, instanceKey);
+  }
+
+  private normalizePhoneRaw(value: string): string {
+    return (value ?? '').toString().replace(/\D+/g, '');
+  }
+
+  async getDestinationAssignment(userId: string, instanceKey: string, phoneRaw: string) {
+    const inst = await this.resolveEvolutionInstanceByKey(userId, instanceKey);
+    const phone = this.normalizePhoneRaw(phoneRaw);
+    if (!phone) throw new BadRequestException('Destino inválido');
+    const record = await (this.prisma as any).evolutionInstancePromptAssignment.findUnique({
+      where: { evolutionInstanceId_phoneRaw: { evolutionInstanceId: inst.id, phoneRaw: phone } },
+      include: { agentPrompt: true }
+    });
+    if (!record) return { instance: inst, phoneRaw: phone, assignment: null };
+    return {
+      instance: inst,
+      phoneRaw: phone,
+      assignment: {
+        promptId: record.agentPromptId,
+        name: record.agentPrompt?.name ?? null,
+        assignedBy: record.assignedBy ?? 'auto',
+        updatedAt: record.updatedAt
+      }
+    };
+  }
+
+  async setDestinationAssignment(userId: string, instanceKey: string, phoneRaw: string, promptId: string | null | undefined) {
+    const inst = await this.resolveEvolutionInstanceByKey(userId, instanceKey);
+    const phone = this.normalizePhoneRaw(phoneRaw);
+    if (!phone) throw new BadRequestException('Destino inválido');
+    const id = (promptId ?? '').trim();
+    if (!id) {
+      await (this.prisma as any).evolutionInstancePromptAssignment.deleteMany({
+        where: { evolutionInstanceId: inst.id, phoneRaw: phone, userId }
+      });
+      return await this.getDestinationAssignment(userId, instanceKey, phone);
+    }
+    const link = await (this.prisma as any).evolutionInstanceAgentPrompt.findFirst({
+      where: { userId, evolutionInstanceId: inst.id, agentPromptId: id, active: true, agentPrompt: { active: true } },
+      select: { agentPromptId: true }
+    });
+    if (!link?.agentPromptId) throw new BadRequestException('Prompt não está vinculado à instância');
+    await (this.prisma as any).evolutionInstancePromptAssignment.upsert({
+      where: { evolutionInstanceId_phoneRaw: { evolutionInstanceId: inst.id, phoneRaw: phone } },
+      update: { agentPromptId: id, assignedBy: 'manual' },
+      create: { userId, evolutionInstanceId: inst.id, phoneRaw: phone, agentPromptId: id, assignedBy: 'manual' }
+    });
+    return await this.getDestinationAssignment(userId, instanceKey, phone);
   }
 }

@@ -1,11 +1,11 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, Max, Min, ValidateNested } from 'class-validator';
 
 class InstanceAgentPromptItemDto {
   @IsString()
   promptId!: string;
 
-  @IsInt()
+  @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(100)
   percent!: number;
@@ -21,4 +21,3 @@ export class SetInstanceAgentPromptsDto {
   @Type(() => InstanceAgentPromptItemDto)
   items!: InstanceAgentPromptItemDto[];
 }
-
