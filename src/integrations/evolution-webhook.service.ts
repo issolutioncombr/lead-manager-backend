@@ -18,8 +18,9 @@ export class EvolutionWebhookService {
     let userId: string | null = null;
     let instanceId: string | null = null;
     let providerInstanceId: string | null = null;
+    let instanceRecord: any = null;
     if (instanceName) {
-      const instanceRecord = await this.prisma.evolutionInstance.findFirst({
+      instanceRecord = await (this.prisma as any).evolutionInstance.findFirst({
         where: {
           OR: [
             { providerInstanceId: instanceName },
@@ -27,7 +28,7 @@ export class EvolutionWebhookService {
             { metadata: { path: ['instanceName'], equals: instanceName } }
           ]
         },
-        select: { userId: true, instanceId: true, providerInstanceId: true }
+        select: { userId: true, instanceId: true, providerInstanceId: true, agentPrompt: true }
       });
       if (instanceRecord) {
         userId = instanceRecord.userId;
@@ -62,12 +63,14 @@ export class EvolutionWebhookService {
         instance: {
           userId,
           instanceId,
-          providerInstanceId
+          providerInstanceId,
+          agent_prompt: instanceRecord?.agentPrompt ?? null
         },
         data: {
           state: payload?.data?.state ?? null,
           statusReason: payload?.data?.statusReason ?? null,
-          wuid: payload?.data?.wuid ?? null
+          wuid: payload?.data?.wuid ?? null,
+          agent_prompt: instanceRecord?.agentPrompt ?? null
         }
       };
       await (this.prisma as any).webhook.update({
@@ -114,7 +117,7 @@ export class EvolutionWebhookService {
     // Mas também tem `instanceId` (nosso ID interno) e `providerInstanceId`.
     // Vamos tentar buscar pelo providerInstanceId primeiro.
 
-    const instanceRecord = await this.prisma.evolutionInstance.findFirst({
+    const instanceRecord = await (this.prisma as any).evolutionInstance.findFirst({
       where: {
         OR: [
           { providerInstanceId: providerInstanceId },
@@ -123,7 +126,7 @@ export class EvolutionWebhookService {
           { metadata: { path: ['instanceName'], equals: instanceName } }
         ]
       },
-      select: { userId: true, instanceId: true, providerInstanceId: true, metadata: true }
+      select: { userId: true, instanceId: true, providerInstanceId: true, metadata: true, agentPrompt: true }
     });
 
     if (instanceRecord) {
@@ -284,6 +287,7 @@ export class EvolutionWebhookService {
         });
 
         const fromNumber = fromMe ? (payload?.body?.sender ?? null) : phoneRaw;
+        const agentPrompt = (instanceRecord as any)?.agentPrompt ?? null;
         const outbound = {
           jsonrow,
           user_id: userId,
@@ -291,11 +295,13 @@ export class EvolutionWebhookService {
           company_name: userApiKey?.companyName ?? null,
           instance_id: createdWebhook.instanceId,
           from_number: fromNumber,
+          agent_prompt: agentPrompt,
           instance: {
             userId,
             instanceId: createdWebhook.instanceId,
             providerInstanceId: createdWebhook.providerInstanceId,
-            apiKey: userApiKey?.apiKey ?? null
+            apiKey: userApiKey?.apiKey ?? null,
+            agent_prompt: agentPrompt
           },
           webhooks: [
             {
