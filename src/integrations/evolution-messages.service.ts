@@ -303,7 +303,9 @@ export class EvolutionMessagesService {
                   { remoteJid: `${normalized}@s.whatsapp.net` },
                   { remoteJidAlt: `${normalized}@s.whatsapp.net` }
                 ],
-                ...(requestedInstanceCandidates.length ? { instanceId: { in: requestedInstanceCandidates } } : {}),
+                ...(requestedInstanceCandidates.length
+                  ? { OR: [{ instanceId: { in: requestedInstanceCandidates } }, { instanceId: null }] }
+                  : {}),
                 timestamp: { lt: oldest }
               },
               select: { id: true }
@@ -348,7 +350,9 @@ export class EvolutionMessagesService {
             { remoteJid: `${normalized}@s.whatsapp.net` },
             { remoteJidAlt: `${normalized}@s.whatsapp.net` }
           ],
-          ...(requestedInstanceCandidates.length ? { instanceId: { in: requestedInstanceCandidates } } : {}),
+          ...(requestedInstanceCandidates.length
+            ? { OR: [{ instanceId: { in: requestedInstanceCandidates } }, { instanceId: null }] }
+            : {}),
           timestamp: { lt: oldest }
         },
         select: { id: true }
@@ -816,6 +820,9 @@ export class EvolutionMessagesService {
     const cursorWhere: any[] = [];
     if (opts?.beforeTimestamp) cursorWhere.push({ timestamp: { lt: opts.beforeTimestamp } });
     if (opts?.beforeUpdatedAt) cursorWhere.push({ updatedAt: { lt: opts.beforeUpdatedAt } });
+    const instanceWhere = opts?.instanceIds?.length
+      ? { OR: [{ instanceId: { in: opts.instanceIds } }, { instanceId: null }] }
+      : null;
     const local = await (this.prisma as any).whatsappMessage.findMany({
       where: {
         userId,
@@ -824,7 +831,7 @@ export class EvolutionMessagesService {
           { remoteJid: `${normalizedPhone}@s.whatsapp.net` },
           { remoteJidAlt: `${normalizedPhone}@s.whatsapp.net` }
         ],
-        ...(opts?.instanceIds?.length ? { instanceId: { in: opts.instanceIds } } : {}),
+        ...(instanceWhere ? { AND: [instanceWhere] } : {}),
         ...(cursorWhere.length ? { AND: [{ OR: cursorWhere }] } : {})
       },
       orderBy: [{ timestamp: 'desc' }, { updatedAt: 'desc' }],

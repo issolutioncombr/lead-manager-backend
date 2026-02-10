@@ -174,6 +174,48 @@ describe('EvolutionMessagesService (TS)', () => {
     expect(call.take).toBe(2);
   });
 
+  it('listConversation com instanceId inclui mensagens legadas sem instanceId (para inbound antigo)', async () => {
+    prisma.evolutionInstance.findMany = jest.fn(async () => [
+      { instanceId: 'inst1', providerInstanceId: null, metadata: { number: '5511999999999' } }
+    ]) as any;
+    prisma.whatsappMessage.findMany = jest.fn(async () => [
+      {
+        wamid: 'wamid-in',
+        fromMe: false,
+        instanceId: null,
+        conversation: 'inbound antigo',
+        mediaUrl: null,
+        caption: null,
+        messageType: 'text',
+        deliveryStatus: null,
+        timestamp: new Date('2026-02-04T09:00:01.000Z'),
+        updatedAt: new Date('2026-02-04T09:00:01.000Z'),
+        pushName: 'Fulano'
+      },
+      {
+        wamid: 'wamid-out',
+        fromMe: true,
+        instanceId: 'inst1',
+        conversation: 'outbound',
+        mediaUrl: null,
+        caption: null,
+        messageType: 'text',
+        deliveryStatus: 'SENT',
+        timestamp: new Date('2026-02-04T09:00:02.000Z'),
+        updatedAt: new Date('2026-02-04T09:00:02.000Z'),
+        pushName: null
+      }
+    ]) as any;
+
+    const res = await svc.listConversation('user1', '+5511999999999', {
+      source: 'local',
+      limit: 10,
+      instanceId: 'inst1'
+    });
+    expect(res.data.some((m: any) => m.wamid === 'wamid-in')).toBe(true);
+    expect(res.data.some((m: any) => m.wamid === 'wamid-out')).toBe(true);
+  });
+
   it('listChats enriquece avatarUrl via profile-pic quando ausente', async () => {
     prisma.evolutionInstance.findFirst = jest.fn(async () => ({ instanceId: 'inst1', providerInstanceId: null })) as any;
     prisma.whatsappMessage.findMany = jest.fn(async () => [
