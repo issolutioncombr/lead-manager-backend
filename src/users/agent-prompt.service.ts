@@ -72,6 +72,13 @@ export class AgentPromptService {
     if (!prompt) throw new BadRequestException('Prompt é obrigatório');
     if (prompt.length > this.maxStoredPromptLength) throw new BadRequestException('Prompt muito grande');
     const name = (data.name ?? '').trim() || null;
+    if (name) {
+      const existing = await (this.prisma as any).agentPrompt.findFirst({
+        where: { userId, name: { equals: name, mode: 'insensitive' } },
+        select: { id: true }
+      });
+      if (existing?.id) throw new BadRequestException('Já existe um prompt com esse nome');
+    }
     return await (this.prisma as any).agentPrompt.create({
       data: {
         userId,
@@ -88,7 +95,17 @@ export class AgentPromptService {
     const existing = await (this.prisma as any).agentPrompt.findFirst({ where: { id, userId }, select: { id: true } });
     if (!existing?.id) throw new NotFoundException('Prompt não encontrado');
     const update: any = {};
-    if (data.name !== undefined) update.name = (data.name ?? '').trim() || null;
+    if (data.name !== undefined) {
+      const nextName = (data.name ?? '').trim() || null;
+      if (nextName) {
+        const duplicate = await (this.prisma as any).agentPrompt.findFirst({
+          where: { userId, name: { equals: nextName, mode: 'insensitive' }, NOT: { id } },
+          select: { id: true }
+        });
+        if (duplicate?.id) throw new BadRequestException('Já existe um prompt com esse nome');
+      }
+      update.name = nextName;
+    }
     if (data.prompt !== undefined) {
       const p = (data.prompt ?? '').trim();
       if (!p) throw new BadRequestException('Prompt é obrigatório');
