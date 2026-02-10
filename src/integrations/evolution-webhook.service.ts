@@ -13,6 +13,16 @@ export class EvolutionWebhookService {
     private readonly events: MessageEventsService
   ) {}
 
+  private isWebhookDebugEnabled() {
+    return (process.env.EVOLUTION_WEBHOOK_DEBUG ?? '').toLowerCase() === 'true';
+  }
+
+  private maskPhone(phoneRaw: string | null | undefined) {
+    const digits = String(phoneRaw ?? '').replace(/\D+/g, '');
+    if (digits.length < 4) return 'invalid';
+    return `${digits.slice(0, 2)}*****${digits.slice(-2)}`;
+  }
+
   async handleConnectionUpdate(payload: any) {
     const instanceName = payload?.instance ?? null;
     let userId: string | null = null;
@@ -98,6 +108,16 @@ export class EvolutionWebhookService {
 
     const { instance, data } = payload;
     const { key, message, contextInfo, messageTimestamp, pushName, messageType } = data;
+    const debug = this.isWebhookDebugEnabled();
+    if (debug) {
+      const remoteJid = key?.remoteJid ?? null;
+      const remoteDigits = typeof remoteJid === 'string' ? remoteJid.replace('@s.whatsapp.net', '').replace(/\D+/g, '') : null;
+      this.logger.log(
+        `upsert received instance=${typeof instance === 'string' ? instance : 'null'} keyId=${key?.id ?? 'null'} remote=${this.maskPhone(
+          remoteDigits
+        )} fromMe=${String(key?.fromMe ?? 'null')}`
+      );
+    }
 
     // 2. Encontrar o usuário dono da instância
     // Tenta pelo nome da instância ou pelo ID (se disponível no payload)
@@ -128,6 +148,11 @@ export class EvolutionWebhookService {
       orWhere.push({ metadata: { path: ['displayName'], equals: instanceName } });
       orWhere.push({ metadata: { path: ['instanceName'], equals: instanceName } });
     }
+    if (debug) {
+      this.logger.log(
+        `upsert resolveInstance instance=${instanceName ?? 'null'} providerInstanceId=${providerInstanceId ?? 'null'} orCount=${orWhere.length}`
+      );
+    }
 
     const instanceRecord =
       orWhere.length > 0
@@ -139,6 +164,15 @@ export class EvolutionWebhookService {
 
     if (instanceRecord) {
       userId = instanceRecord.userId;
+      if (debug) {
+        const meta: any = instanceRecord?.metadata && typeof instanceRecord.metadata === 'object' ? instanceRecord.metadata : {};
+        const metaNumber = typeof meta?.number === 'string' ? meta.number : typeof meta?.ownerJid === 'string' ? meta.ownerJid : null;
+        this.logger.log(
+          `upsert resolved instanceRecordId=${instanceRecord.id} instanceId=${instanceRecord.instanceId} providerInstanceId=${instanceRecord.providerInstanceId ?? 'null'} metaNumber=${this.maskPhone(
+            metaNumber
+          )}`
+        );
+      }
     } else {
       // Fallback: tenta identificar o usuário pelo apiKey presente no payload
       const apiKeyFromPayload: string | undefined = payload?.body?.apikey ?? payload?.apikey;
@@ -405,6 +439,13 @@ export class EvolutionWebhookService {
           },
           webhooks: [baseWebhookItem]
         };
+        if (debug) {
+          this.logger.log(
+            `upsert outbound instance_id=${createdWebhook.instanceId} provider_instance_id=${createdWebhook.providerInstanceId ?? 'null'} instance_number=${this.maskPhone(
+              instanceNumber
+            )} contact_number=${this.maskPhone(contactNumberResolved)} from=${this.maskPhone(fromNumber)} to=${this.maskPhone(toNumber)}`
+          );
+        }
 
         if (instanceRecord?.id && phoneRaw) {
           await (this.prisma as any).promptDispatchLog.create({
