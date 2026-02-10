@@ -53,7 +53,8 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       user: {
         findUnique: jest.fn(async () => ({
           apiKey: 'apikey-1',
-          companyName: 'ACME Ltd'
+          companyName: 'ACME Ltd',
+          company: { id: 'comp-1', name: 'Company ACME' }
         }))
       }
     };
@@ -85,10 +86,11 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     const args = (global.fetch as any).mock.calls[0];
     const sentBody = JSON.parse(args[1].body);
     expect(sentBody.user_id).toBe('user-123');
-    expect(sentBody.company_id).toBeNull();
-    expect(sentBody.company_name).toBe('ACME Ltd');
+    expect(sentBody.company_id).toBe('comp-1');
+    expect(sentBody.company_name).toBe('Company ACME');
     expect(sentBody.instance_id).toBe('inst-abc');
     expect(sentBody.from_number).toBe('5511999999999');
+    expect(sentBody.to_number).toBe('5511888888888');
   });
 
   it('inclui agent_prompt quando configurado na instância', async () => {
@@ -132,7 +134,8 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       user: {
         findUnique: jest.fn(async () => ({
           apiKey: 'apikey-1',
-          companyName: 'ACME Ltd'
+          companyName: 'ACME Ltd',
+          company: { id: 'comp-1', name: 'Company ACME' }
         }))
       }
     };
@@ -165,6 +168,8 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     const sentBody = JSON.parse(args[1].body);
     expect(sentBody.agent_prompt).toBe('PROMPT-DA-INST');
     expect(sentBody.instance.agent_prompt).toBe('PROMPT-DA-INST');
+    expect(sentBody.company_id).toBe('comp-1');
+    expect(sentBody.company_name).toBe('Company ACME');
   });
 
   it('usa o prompt atribuído (A/B) e envia apenas 1 webhook por mensagem', async () => {
@@ -218,7 +223,8 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       user: {
         findUnique: jest.fn(async () => ({
           apiKey: 'apikey-1',
-          companyName: 'ACME Ltd'
+          companyName: 'ACME Ltd',
+          company: { id: 'comp-1', name: 'Company ACME' }
         }))
       }
     };
@@ -252,5 +258,7 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     expect(body.prompt_id).toBe('p2');
     expect(body.agent_prompt).toBe('TEXTO 2');
     expect(body.percent).toBe(50);
+    expect(body.from_number).toBe('5511999999999');
+    expect(body.to_number).toBe('5511888888888');
   });
 });

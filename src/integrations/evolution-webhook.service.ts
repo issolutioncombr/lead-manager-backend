@@ -283,10 +283,15 @@ export class EvolutionWebhookService {
       if (n8nUrl) {
         const userApiKey = await (this.prisma as any).user.findUnique({
           where: { id: userId },
-          select: { apiKey: true, companyName: true }
+          select: { apiKey: true, companyName: true, company: { select: { id: true, name: true } } }
         });
 
-        const fromNumber = fromMe ? (payload?.body?.sender ?? null) : phoneRaw;
+        const normalizePhoneNumber = (value: any) => (typeof value === 'string' ? value.replace(/\D+/g, '') : '');
+        const contactNumber = normalizePhoneNumber(phoneRaw ?? null);
+        const senderNumber = normalizePhoneNumber(payload?.body?.sender ?? null);
+        const destinationNumber = normalizePhoneNumber(payload?.body?.destination ?? null);
+        const fromNumber = (fromMe ? senderNumber : contactNumber) || null;
+        const toNumber = (fromMe ? (destinationNumber || contactNumber) : (senderNumber || destinationNumber)) || null;
         const includePrompt = (process.env.N8N_INCLUDE_AGENT_PROMPT ?? 'true').toLowerCase() !== 'false';
         const normalizePrompt = (value: any) => {
           if (!includePrompt) return null;
@@ -358,14 +363,17 @@ export class EvolutionWebhookService {
 
         const percent = selectedLink ? Number(selectedLink.percentBps ?? 0) / 100 : 100;
         const occurredAt = messageTimestamp ? new Date(messageTimestamp * 1000) : new Date();
+        const companyId = userApiKey?.company?.id ?? null;
+        const companyName = userApiKey?.company?.name ?? userApiKey?.companyName ?? null;
         const outbound = {
           jsonrow,
           user_id: userId,
-          company_id: null,
-          company_name: userApiKey?.companyName ?? null,
+          company_id: companyId,
+          company_name: companyName,
           instance_id: createdWebhook.instanceId,
           provider_instance_id: createdWebhook.providerInstanceId ?? null,
           from_number: fromNumber,
+          to_number: toNumber,
           prompt_id: selectedLink?.agentPromptId ?? null,
           prompt_name: selectedLink?.agentPrompt?.name ?? null,
           agent_prompt: selectedLink ? normalizePrompt(selectedLink?.agentPrompt?.prompt) : normalizePrompt(legacyPrompt),
