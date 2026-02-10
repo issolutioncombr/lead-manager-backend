@@ -205,7 +205,7 @@ export class AgentPromptService {
             userId,
             evolutionInstanceId: inst.id,
             agentPromptId: it.promptId,
-            percent: it.percentBps,
+            percentBps: it.percentBps,
             active: it.active
           }))
         });
