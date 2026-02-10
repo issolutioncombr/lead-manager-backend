@@ -54,7 +54,7 @@ export class EvolutionService {
   private readonly defaultTemplate?: string;
   private readonly defaultChannel?: string;
   private readonly defaultToken?: string;
-  private discoveredPaths?: { chats?: string; conversation?: string };
+  private discoveredPaths?: { chats?: string; conversation?: string; profilePic?: string };
   private readonly instanceNameCache = new Map<string, { value: string; expiresAt: number }>();
   private readonly instancesCache = new Map<string, { value: EvolutionInstanceSummary[]; expiresAt: number }>();
   private readonly profilePicCache = new Map<string, { value: string | null; expiresAt: number }>();
@@ -307,7 +307,7 @@ export class EvolutionService {
     const now = Date.now();
     const cached = this.profilePicCache.get(cacheKey);
     if (cached && cached.expiresAt > now) return cached.value;
-    const path = this.appendQuery(`/chat/fetch-profilepic-url/${encodeURIComponent(instanceKey)}`, { jid });
+    const path = await this.getProfilePicPath(instanceKey, jid);
     const payload = await this.request<any>(path, { method: 'GET' }).catch(() => null);
     const url =
       typeof payload === 'string'
@@ -322,6 +322,34 @@ export class EvolutionService {
     const value = url && url.trim() ? url.trim() : null;
     this.profilePicCache.set(cacheKey, { value, expiresAt: now + 10 * 60_000 });
     return value;
+  }
+
+  private async getProfilePicPath(instanceKey: string, jid: string): Promise<string> {
+    if (this.discoveredPaths?.profilePic) {
+      return this.appendQuery(this.discoveredPaths.profilePic.replace('{instance}', encodeURIComponent(instanceKey)), { jid });
+    }
+    const encodedInstance = encodeURIComponent(instanceKey);
+    const candidates = [
+      `/chat/fetch-profilepic-url/{instance}`,
+      `/chat/fetch-profile-pic-url/{instance}`,
+      `/chat/fetchProfilePicUrl/{instance}`,
+      `/chat/fetchProfilePictureUrl/{instance}`,
+      `/chat/fetch-profile-picture-url/{instance}`,
+      `/chat/profile-pic-url/{instance}`,
+      `/chat/profilePicUrl/{instance}`
+    ];
+    for (const base of candidates) {
+      const path = base.replace('{instance}', encodedInstance);
+      const tryPath = this.appendQuery(path, { jid });
+      const ok = await this.probe(tryPath);
+      if (ok) {
+        this.discoveredPaths = { ...(this.discoveredPaths ?? {}), profilePic: base };
+        return tryPath;
+      }
+    }
+    const fallback = `/chat/fetchProfilePicUrl/{instance}`;
+    this.discoveredPaths = { ...(this.discoveredPaths ?? {}), profilePic: fallback };
+    return this.appendQuery(fallback.replace('{instance}', encodedInstance), { jid });
   }
 
   async delete(instanceId: string) {
