@@ -89,6 +89,8 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     expect(sentBody.company_id).toBe('comp-1');
     expect(sentBody.company_name).toBe('Company ACME');
     expect(sentBody.instance_id).toBe('inst-abc');
+    expect(sentBody.instance_number).toBe('5511888888888');
+    expect(sentBody.contact_number).toBe('5511999999999');
     expect(sentBody.from_number).toBe('5511999999999');
     expect(sentBody.to_number).toBe('5511888888888');
   });
@@ -258,6 +260,8 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     expect(body.prompt_id).toBe('p2');
     expect(body.agent_prompt).toBe('TEXTO 2');
     expect(body.percent).toBe(50);
+    expect(body.instance_number).toBe('5511888888888');
+    expect(body.contact_number).toBe('5511999999999');
     expect(body.from_number).toBe('5511999999999');
     expect(body.to_number).toBe('5511888888888');
   });

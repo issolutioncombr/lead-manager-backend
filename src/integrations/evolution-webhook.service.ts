@@ -290,12 +290,12 @@ export class EvolutionWebhookService {
         const contactNumber = normalizePhoneNumber(phoneRaw ?? null);
         const senderNumber = normalizePhoneNumber(payload?.body?.sender ?? null);
         const destinationNumber = normalizePhoneNumber(payload?.body?.destination ?? null);
-        const instanceNumber =
-          senderNumber ||
-          normalizePhoneNumber(payload?.instance ?? null) ||
-          normalizePhoneNumber(instanceName ?? null) ||
-          normalizePhoneNumber(createdWebhook.instanceId ?? null) ||
+        const meta = (instanceRecord as any)?.metadata ?? null;
+        const instanceMetaNumber =
+          normalizePhoneNumber(meta?.number ?? null) ||
+          normalizePhoneNumber(meta?.ownerJid ?? null) ||
           null;
+        const instanceNumber = senderNumber || instanceMetaNumber || null;
         const contactNumberResolved = contactNumber || destinationNumber || null;
         const fromNumber = (fromMe ? instanceNumber : contactNumberResolved) || null;
         const toNumber = (fromMe ? (destinationNumber || contactNumberResolved) : (instanceNumber || destinationNumber)) || null;
@@ -379,6 +379,8 @@ export class EvolutionWebhookService {
           company_name: companyName,
           instance_id: createdWebhook.instanceId,
           provider_instance_id: createdWebhook.providerInstanceId ?? null,
+          instance_number: instanceNumber,
+          contact_number: contactNumberResolved,
           from_number: fromNumber,
           to_number: toNumber,
           prompt_id: selectedLink?.agentPromptId ?? null,
