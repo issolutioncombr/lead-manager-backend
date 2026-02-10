@@ -31,6 +31,9 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
         findUnique: jest.fn(async () => null),
         upsert: jest.fn(async () => ({}))
       },
+      promptDispatchLog: {
+        create: jest.fn(async () => ({}))
+      },
       lead: {
         findFirst: jest.fn(async () => null),
         create: jest.fn(async () => ({}))
@@ -106,6 +109,9 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       evolutionInstancePromptAssignment: {
         findUnique: jest.fn(async () => null),
         upsert: jest.fn(async () => ({}))
+      },
+      promptDispatchLog: {
+        create: jest.fn(async () => ({}))
       },
       lead: {
         findFirst: jest.fn(async () => null),
@@ -189,6 +195,9 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
       evolutionInstancePromptAssignment: {
         findUnique: jest.fn(async () => ({ agentPromptId: 'p2', assignedBy: 'auto' })),
         upsert: jest.fn(async () => ({}))
+      },
+      promptDispatchLog: {
+        create: jest.fn(async () => ({}))
       },
       lead: {
         findFirst: jest.fn(async () => null),

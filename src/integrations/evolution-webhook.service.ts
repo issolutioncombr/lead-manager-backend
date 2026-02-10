@@ -357,6 +357,7 @@ export class EvolutionWebhookService {
         }
 
         const percent = selectedLink ? Number(selectedLink.percentBps ?? 0) / 100 : 100;
+        const occurredAt = messageTimestamp ? new Date(messageTimestamp * 1000) : new Date();
         const outbound = {
           jsonrow,
           user_id: userId,
@@ -383,6 +384,23 @@ export class EvolutionWebhookService {
           },
           webhooks: [baseWebhookItem]
         };
+
+        if (instanceRecord?.id && phoneRaw) {
+          await (this.prisma as any).promptDispatchLog.create({
+            data: {
+              userId,
+              evolutionInstanceId: instanceRecord.id,
+              webhookId: createdWebhook.id,
+              phoneRaw,
+              agentPromptId: selectedLink?.agentPromptId ?? null,
+              promptName: selectedLink?.agentPrompt?.name ?? null,
+              percentBps: selectedLink ? Number(selectedLink.percentBps ?? 0) : null,
+              assignedBy: selectedLink ? (assignedBy ?? 'auto') : 'legacy',
+              wamid: wamid ?? null,
+              occurredAt
+            }
+          });
+        }
 
         await (this.prisma as any).webhook.update({
           where: { id: createdWebhook.id },

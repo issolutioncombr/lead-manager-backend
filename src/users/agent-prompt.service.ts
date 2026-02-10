@@ -124,12 +124,89 @@ export class AgentPromptService {
     return await (this.prisma as any).agentPrompt.update({ where: { id }, data: update });
   }
 
+  private normalizeTo10000Bps(items: Array<{ id: string; bps: number }>): Map<string, number> {
+    if (items.length === 1) return new Map([[items[0].id, 10000]]);
+    const total = items.reduce((acc, it) => acc + (Number(it.bps) || 0), 0);
+    if (total <= 0) {
+      const base = Math.floor(10000 / items.length);
+      const rem = 10000 - base * items.length;
+      const m = new Map<string, number>();
+      for (let i = 0; i < items.length; i += 1) m.set(items[i].id, base + (i < rem ? 1 : 0));
+      return m;
+    }
+    const scaled = items.map((it) => {
+      const raw = (it.bps * 10000) / total;
+      const floor = Math.floor(raw);
+      return { id: it.id, floor, frac: raw - floor };
+    });
+    const sumFloor = scaled.reduce((acc, it) => acc + it.floor, 0);
+    let rem = 10000 - sumFloor;
+    scaled.sort((a, b) => b.frac - a.frac);
+    const out = new Map<string, number>();
+    for (const it of scaled) {
+      const add = rem > 0 ? 1 : 0;
+      if (rem > 0) rem -= 1;
+      out.set(it.id, it.floor + add);
+    }
+    return out;
+  }
+
   async deletePrompt(userId: string, promptId: string) {
     const id = (promptId ?? '').trim();
     if (!id) throw new NotFoundException('Prompt não encontrado');
     const existing = await (this.prisma as any).agentPrompt.findFirst({ where: { id, userId }, select: { id: true } });
     if (!existing?.id) throw new NotFoundException('Prompt não encontrado');
-    await (this.prisma as any).agentPrompt.delete({ where: { id } });
+    await this.prisma.$transaction(async (tx) => {
+      const affected = await (tx as any).evolutionInstanceAgentPrompt.findMany({
+        where: { userId, agentPromptId: id },
+        select: { evolutionInstanceId: true }
+      });
+      const instanceIds = Array.from(new Set(affected.map((a: any) => a.evolutionInstanceId).filter(Boolean)));
+
+      for (const evolutionInstanceId of instanceIds) {
+        const remaining = await (tx as any).evolutionInstanceAgentPrompt.findMany({
+          where: { userId, evolutionInstanceId, agentPromptId: { not: id } },
+          select: { id: true, agentPromptId: true, percentBps: true, active: true, createdAt: true },
+          orderBy: [{ createdAt: 'asc' }]
+        });
+        if (!remaining.length) continue;
+
+        let remainingActive = remaining.filter((l: any) => l.active !== false);
+        let forcedActiveId: string | null = null;
+        if (!remainingActive.length) {
+          forcedActiveId = remaining[0].id;
+          remainingActive = [{ ...remaining[0], active: true }];
+        }
+
+        const normalizedMap = this.normalizeTo10000Bps(
+          remainingActive.map((l: any) => ({ id: l.id, bps: Number(l.percentBps ?? 0) || 0 }))
+        );
+
+        let replacementPromptId: string | null = null;
+        let replacementBps = -1;
+        for (const l of remaining) {
+          const isActive = forcedActiveId ? l.id === forcedActiveId : l.active !== false;
+          const bps = isActive ? normalizedMap.get(l.id) ?? 0 : 0;
+          await (tx as any).evolutionInstanceAgentPrompt.update({
+            where: { id: l.id },
+            data: forcedActiveId && l.id === forcedActiveId ? { percentBps: bps, active: true } : { percentBps: bps }
+          });
+          if (isActive && bps >= replacementBps) {
+            replacementBps = bps;
+            replacementPromptId = l.agentPromptId;
+          }
+        }
+
+        if (replacementPromptId) {
+          await (tx as any).evolutionInstancePromptAssignment.updateMany({
+            where: { userId, evolutionInstanceId, agentPromptId: id },
+            data: { agentPromptId: replacementPromptId, assignedBy: 'system' }
+          });
+        }
+      }
+
+      await (tx as any).agentPrompt.delete({ where: { id } });
+    });
     return { ok: true };
   }
 
