@@ -102,8 +102,10 @@ export class EvolutionWebhookService {
     // 2. Encontrar o usuário dono da instância
     // Tenta pelo nome da instância ou pelo ID (se disponível no payload)
     // O payload do exemplo tem "instance": "Whatsapp IA 8741" e "instanceId": "..."
-    const instanceName = instance;
-    const providerInstanceId = data.instanceId; // Payload example shows instanceId inside data too? No, it's inside body.
+    const instanceName = typeof instance === 'string' ? instance : null;
+    const providerInstanceIdRaw = (data as any)?.instanceId ?? (payload as any)?.body?.instanceId ?? null;
+    const providerInstanceId =
+      typeof providerInstanceIdRaw === 'string' && providerInstanceIdRaw.trim().length > 0 ? providerInstanceIdRaw.trim() : null;
 
     // O payload recebido tem "instance" no nível superior e "instanceId" dentro de "data" no exemplo do usuário?
     // User example:
@@ -117,17 +119,23 @@ export class EvolutionWebhookService {
     // Mas também tem `instanceId` (nosso ID interno) e `providerInstanceId`.
     // Vamos tentar buscar pelo providerInstanceId primeiro.
 
-    const instanceRecord = await (this.prisma as any).evolutionInstance.findFirst({
-      where: {
-        OR: [
-          { providerInstanceId: providerInstanceId },
-          // Se não achar pelo ID, tenta pelo nome no metadata (muito comum na Evolution)
-          { metadata: { path: ['displayName'], equals: instanceName } },
-          { metadata: { path: ['instanceName'], equals: instanceName } }
-        ]
-      },
-      select: { id: true, userId: true, instanceId: true, providerInstanceId: true, metadata: true, agentPrompt: true }
-    });
+    const orWhere: any[] = [];
+    if (providerInstanceId) {
+      orWhere.push({ providerInstanceId });
+    }
+    if (instanceName) {
+      orWhere.push({ instanceId: instanceName });
+      orWhere.push({ metadata: { path: ['displayName'], equals: instanceName } });
+      orWhere.push({ metadata: { path: ['instanceName'], equals: instanceName } });
+    }
+
+    const instanceRecord =
+      orWhere.length > 0
+        ? await (this.prisma as any).evolutionInstance.findFirst({
+            where: { OR: orWhere },
+            select: { id: true, userId: true, instanceId: true, providerInstanceId: true, metadata: true, agentPrompt: true }
+          })
+        : null;
 
     if (instanceRecord) {
       userId = instanceRecord.userId;

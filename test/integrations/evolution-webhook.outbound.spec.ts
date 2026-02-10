@@ -95,6 +95,53 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     expect(sentBody.to_number).toBe('5511888888888');
   });
 
+  it('não usa providerInstanceId indefinido ao resolver instância (multi-instância)', async () => {
+    const prisma = {
+      evolutionInstance: {
+        findFirst: jest.fn(async () => ({
+          id: 'evo-2',
+          userId: 'user-123',
+          instanceId: 'inst-b',
+          providerInstanceId: 'prov-b',
+          metadata: {}
+        }))
+      },
+      evolutionInstanceAgentPrompt: { findMany: jest.fn(async () => []) },
+      evolutionInstancePromptAssignment: { findUnique: jest.fn(async () => null), upsert: jest.fn(async () => ({})) },
+      promptDispatchLog: { create: jest.fn(async () => ({})) },
+      lead: { findFirst: jest.fn(async () => null), create: jest.fn(async () => ({})) },
+      webhook: {
+        create: jest.fn(async () => ({ id: 'wh-1', userId: 'user-123', instanceId: 'inst-b', providerInstanceId: 'prov-b' })),
+        update: jest.fn(async () => ({}))
+      },
+      whatsappMessage: { upsert: jest.fn(async () => ({})) },
+      user: { findUnique: jest.fn(async () => ({ apiKey: 'apikey-1', company: { id: 'comp-1', name: 'Company ACME' } })) }
+    };
+    const events = { emit: jest.fn() };
+    const svc = new EvolutionWebhookService(prisma as any, events as any);
+
+    await svc.handleWebhook({
+      event: 'messages.upsert',
+      instance: 'inst-b',
+      data: {
+        key: { remoteJid: '5511999999999@s.whatsapp.net', fromMe: false },
+        message: { conversation: 'Olá' },
+        pushName: 'Fulano',
+        messageTimestamp: 1700000000,
+        messageType: 'text'
+      },
+      body: { sender: '5511888888888', destination: '5511999999999' }
+    });
+
+    const args = (prisma.evolutionInstance.findFirst as any).mock.calls[0][0];
+    expect(Array.isArray(args.where.OR)).toBe(true);
+    expect(args.where.OR).toEqual([
+      { instanceId: 'inst-b' },
+      { metadata: { path: ['displayName'], equals: 'inst-b' } },
+      { metadata: { path: ['instanceName'], equals: 'inst-b' } }
+    ]);
+  });
+
   it('inclui agent_prompt quando configurado na instância', async () => {
     const prisma = {
       evolutionInstance: {
