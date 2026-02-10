@@ -8,6 +8,26 @@ export class AgentPromptService {
 
   private readonly maxStoredPromptLength = 100000;
 
+  private normalizePromptName(name: string | null | undefined): string | null {
+    const normalized = (name ?? '').trim();
+    return normalized ? normalized : null;
+  }
+
+  private async assertUniquePromptName(userId: string, name: string | null, excludeId?: string) {
+    if (!name) return;
+    const rows = await (this.prisma as any).agentPrompt.findMany({
+      where: { userId, name: { not: null } },
+      select: { id: true, name: true }
+    });
+    const target = name.toLowerCase();
+    const dup = rows.find((r: any) => {
+      if (!r?.name) return false;
+      if (excludeId && r.id === excludeId) return false;
+      return String(r.name).toLowerCase() === target;
+    });
+    if (dup?.id) throw new BadRequestException('Já existe um prompt com esse nome');
+  }
+
   async getLegacyPrompt(userId: string): Promise<string> {
     const record = await (this.prisma as any).legacyAgentPrompt.findUnique({
       where: { userId }
@@ -71,14 +91,8 @@ export class AgentPromptService {
     const prompt = (data.prompt ?? '').trim();
     if (!prompt) throw new BadRequestException('Prompt é obrigatório');
     if (prompt.length > this.maxStoredPromptLength) throw new BadRequestException('Prompt muito grande');
-    const name = (data.name ?? '').trim() || null;
-    if (name) {
-      const existing = await (this.prisma as any).agentPrompt.findFirst({
-        where: { userId, name: { equals: name, mode: 'insensitive' } },
-        select: { id: true }
-      });
-      if (existing?.id) throw new BadRequestException('Já existe um prompt com esse nome');
-    }
+    const name = this.normalizePromptName(data.name);
+    await this.assertUniquePromptName(userId, name);
     return await (this.prisma as any).agentPrompt.create({
       data: {
         userId,
@@ -96,14 +110,8 @@ export class AgentPromptService {
     if (!existing?.id) throw new NotFoundException('Prompt não encontrado');
     const update: any = {};
     if (data.name !== undefined) {
-      const nextName = (data.name ?? '').trim() || null;
-      if (nextName) {
-        const duplicate = await (this.prisma as any).agentPrompt.findFirst({
-          where: { userId, name: { equals: nextName, mode: 'insensitive' }, NOT: { id } },
-          select: { id: true }
-        });
-        if (duplicate?.id) throw new BadRequestException('Já existe um prompt com esse nome');
-      }
+      const nextName = this.normalizePromptName(data.name);
+      await this.assertUniquePromptName(userId, nextName, id);
       update.name = nextName;
     }
     if (data.prompt !== undefined) {

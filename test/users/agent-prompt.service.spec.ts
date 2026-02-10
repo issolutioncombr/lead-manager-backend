@@ -4,6 +4,7 @@ describe('AgentPromptService (biblioteca + vínculos por instância)', () => {
   it('createPrompt cria um prompt na biblioteca', async () => {
     const prisma = {
       agentPrompt: {
+        findMany: jest.fn(async () => []),
         create: jest.fn(async (args: any) => ({ id: 'p1', ...args.data }))
       },
       legacyAgentPrompt: {
@@ -16,6 +17,21 @@ describe('AgentPromptService (biblioteca + vínculos por instância)', () => {
     expect((created as any).id).toBe('p1');
     expect((created as any).userId).toBe('user1');
     expect((created as any).prompt).toBe('Olá');
+  });
+
+  it('createPrompt rejeita nome duplicado (case-insensitive)', async () => {
+    const prisma = {
+      agentPrompt: {
+        findMany: jest.fn(async () => [{ id: 'p1', name: 'Prompt 1' }]),
+        create: jest.fn()
+      },
+      legacyAgentPrompt: {
+        findUnique: jest.fn(),
+        upsert: jest.fn()
+      }
+    };
+    const svc = new AgentPromptService(prisma as any);
+    await expect(svc.createPrompt('user1', { name: 'prompt 1', prompt: 'Olá' })).rejects.toThrow('Já existe um prompt com esse nome');
   });
 
   it('setInstancePromptLinks valida soma 100 e persiste vínculos', async () => {
