@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -339,5 +340,68 @@ export class AgentPromptService {
       create: { userId, evolutionInstanceId: inst.id, phoneRaw: phone, agentPromptId: id, assignedBy: 'manual' }
     });
     return await this.getDestinationAssignment(userId, instanceKey, phone);
+  }
+
+  private parseDateRange(from?: string, to?: string): { from: Date; to: Date } {
+    const normalizeDate = (input: string | undefined, endOfDay: boolean) => {
+      if (!input) return null;
+      const raw = input.trim();
+      if (!raw) return null;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+        return endOfDay ? new Date(`${raw}T23:59:59.999Z`) : new Date(`${raw}T00:00:00.000Z`);
+      }
+      const d = new Date(raw);
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+    const now = new Date();
+    const defaultTo = now;
+    const defaultFrom = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const parsedFrom = normalizeDate(from, false) ?? defaultFrom;
+    const parsedTo = normalizeDate(to, true) ?? defaultTo;
+    return { from: parsedFrom, to: parsedTo };
+  }
+
+  async getPromptDispatchReport(userId: string, params: { instanceId?: string; from?: string; to?: string; phoneRaw?: string }) {
+    const { from, to } = this.parseDateRange(params.from, params.to);
+    const phone = params.phoneRaw ? this.normalizePhoneRaw(params.phoneRaw) : null;
+    const instanceKey = (params.instanceId ?? '').trim() || null;
+    const instance = instanceKey ? await this.resolveEvolutionInstanceByKey(userId, instanceKey) : null;
+
+    const rows: any[] = await (this.prisma as any).$queryRaw(
+      Prisma.sql`
+        SELECT
+          "evolution_instance_id" as "evolutionInstanceId",
+          "agent_prompt_id" as "agentPromptId",
+          "prompt_name" as "promptName",
+          "assigned_by" as "assignedBy",
+          COUNT(*)::bigint as "events",
+          COUNT(DISTINCT "phone_raw")::bigint as "destinations"
+        FROM "agent_prompt_dispatch_logs"
+        WHERE "userId" = ${userId}
+          AND "occurred_at" >= ${from}
+          AND "occurred_at" <= ${to}
+          ${instance ? Prisma.sql`AND "evolution_instance_id" = ${instance.id}` : Prisma.empty}
+          ${phone ? Prisma.sql`AND "phone_raw" = ${phone}` : Prisma.empty}
+        GROUP BY "evolution_instance_id", "agent_prompt_id", "prompt_name", "assigned_by"
+        ORDER BY "events" DESC
+      `
+    );
+
+    const data = rows.map((r) => ({
+      evolutionInstanceId: r.evolutionInstanceId as string,
+      agentPromptId: (r.agentPromptId as string | null) ?? null,
+      promptName: (r.promptName as string | null) ?? null,
+      assignedBy: r.assignedBy as string,
+      events: typeof r.events === 'bigint' ? Number(r.events) : Number(r.events ?? 0),
+      destinations: typeof r.destinations === 'bigint' ? Number(r.destinations) : Number(r.destinations ?? 0)
+    }));
+
+    return {
+      from,
+      to,
+      instance,
+      phoneRaw: phone,
+      data
+    };
   }
 }

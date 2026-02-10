@@ -96,4 +96,15 @@ export class AgentPromptController {
   ) {
     return await this.agentPromptService.setDestinationAssignment(user.userId, instanceId, phoneRaw, dto.promptId ?? null);
   }
+
+  @Get('reports/dispatches')
+  async getDispatchReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('instanceId') instanceId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('phoneRaw') phoneRaw?: string
+  ) {
+    return await this.agentPromptService.getPromptDispatchReport(user.userId, { instanceId, from, to, phoneRaw });
+  }
 }
