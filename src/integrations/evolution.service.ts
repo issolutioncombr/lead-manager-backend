@@ -231,7 +231,7 @@ export class EvolutionService {
       webhookConfig.headers = payload.headers;
     }
 
-    const primaryBody = { instance: { webhook: webhookConfig } };
+    const primaryBody = { webhook: webhookConfig };
     try {
       return await this.request<any>(`/webhook/set/${encodeURIComponent(instanceKey)}`, {
         method: 'POST',
@@ -241,10 +241,23 @@ export class EvolutionService {
       if (error instanceof HttpException) {
         const status = error.getStatus();
         if (status === 400 || status === 404) {
-          return this.request<any>(`/webhook/set/${encodeURIComponent(instanceKey)}`, {
-            method: 'POST',
-            body: JSON.stringify(webhookConfig)
-          });
+          try {
+            return await this.request<any>(`/webhook/set/${encodeURIComponent(instanceKey)}`, {
+              method: 'POST',
+              body: JSON.stringify({ instance: { webhook: webhookConfig } })
+            });
+          } catch (fallbackErr) {
+            if (fallbackErr instanceof HttpException) {
+              const fallbackStatus = fallbackErr.getStatus();
+              if (fallbackStatus === 400 || fallbackStatus === 404) {
+                return this.request<any>(`/webhook/set/${encodeURIComponent(instanceKey)}`, {
+                  method: 'POST',
+                  body: JSON.stringify(webhookConfig)
+                });
+              }
+            }
+            throw fallbackErr;
+          }
         }
       }
       throw error;
