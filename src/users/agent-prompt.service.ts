@@ -6,6 +6,8 @@ import { PrismaService } from '../prisma/prisma.service';
 export class AgentPromptService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private readonly maxStoredPromptLength = 100000;
+
   async getLegacyPrompt(userId: string): Promise<string> {
     const record = await (this.prisma as any).legacyAgentPrompt.findUnique({
       where: { userId }
@@ -68,7 +70,7 @@ export class AgentPromptService {
   async createPrompt(userId: string, data: { name?: string | null; prompt: string }) {
     const prompt = (data.prompt ?? '').trim();
     if (!prompt) throw new BadRequestException('Prompt é obrigatório');
-    if (prompt.length > 20000) throw new BadRequestException('Prompt muito grande');
+    if (prompt.length > this.maxStoredPromptLength) throw new BadRequestException('Prompt muito grande');
     const name = (data.name ?? '').trim() || null;
     return await (this.prisma as any).agentPrompt.create({
       data: {
@@ -90,7 +92,7 @@ export class AgentPromptService {
     if (data.prompt !== undefined) {
       const p = (data.prompt ?? '').trim();
       if (!p) throw new BadRequestException('Prompt é obrigatório');
-      if (p.length > 20000) throw new BadRequestException('Prompt muito grande');
+      if (p.length > this.maxStoredPromptLength) throw new BadRequestException('Prompt muito grande');
       update.prompt = p;
     }
     if (data.active !== undefined) update.active = !!data.active;
