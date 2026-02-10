@@ -67,7 +67,9 @@ model User {
   alunos              Aluno[]
   courseLeads         CourseLead[]
   sellers             Seller[]
-  agentPrompt         AgentPrompt?
+  legacyAgentPrompt   LegacyAgentPrompt?
+  agentPrompts        AgentPrompt[]
+  evolutionInstanceAgentPrompts EvolutionInstanceAgentPrompt[]
   webhookTokens       WebhookToken[]
   whatsappMessages    WhatsappMessage[]
   whatsappPhoneInstances WhatsappPhoneInstance[]
@@ -115,6 +117,7 @@ model EvolutionInstance {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
   user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  promptLinks        EvolutionInstanceAgentPrompt[]
 
   @@index([userId])
 }
@@ -193,13 +196,49 @@ model SellerAvailability {
   @@map("seller_availability")
 }
 
-model AgentPrompt {
+model LegacyAgentPrompt {
   userId String @id
   prompt String?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("agent_prompts")
+}
+
+model AgentPrompt {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String?
+  prompt    String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  links     EvolutionInstanceAgentPrompt[]
+
+  @@index([userId])
+  @@map("agent_prompt_library")
+}
+
+model EvolutionInstanceAgentPrompt {
+  id                String   @id @default(cuid())
+  userId            String
+  evolutionInstanceId String @map("evolution_instance_id")
+  agentPromptId     String   @map("agent_prompt_id")
+  percent           Int
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  evolutionInstance EvolutionInstance @relation(fields: [evolutionInstanceId], references: [id], onDelete: Cascade)
+  agentPrompt       AgentPrompt     @relation(fields: [agentPromptId], references: [id], onDelete: Cascade)
+
+  @@unique([evolutionInstanceId, agentPromptId])
+  @@index([userId])
+  @@index([evolutionInstanceId])
+  @@map("evolution_instance_agent_prompts")
 }
 
 model WebhookToken {

@@ -126,7 +126,7 @@ export class EvolutionWebhookService {
           { metadata: { path: ['instanceName'], equals: instanceName } }
         ]
       },
-      select: { userId: true, instanceId: true, providerInstanceId: true, metadata: true, agentPrompt: true }
+      select: { id: true, userId: true, instanceId: true, providerInstanceId: true, metadata: true, agentPrompt: true }
     });
 
     if (instanceRecord) {
@@ -287,61 +287,113 @@ export class EvolutionWebhookService {
         });
 
         const fromNumber = fromMe ? (payload?.body?.sender ?? null) : phoneRaw;
-        const agentPrompt = (instanceRecord as any)?.agentPrompt ?? null;
-        const outbound = {
-          jsonrow,
-          user_id: userId,
-          company_id: null,
-          company_name: userApiKey?.companyName ?? null,
-          instance_id: createdWebhook.instanceId,
-          from_number: fromNumber,
-          agent_prompt: agentPrompt,
-          instance: {
-            userId,
-            instanceId: createdWebhook.instanceId,
-            providerInstanceId: createdWebhook.providerInstanceId,
-            apiKey: userApiKey?.apiKey ?? null,
-            agent_prompt: agentPrompt
-          },
-          webhooks: [
-            {
-              instance: instanceName ?? createdWebhook.instanceId,
-              instanceId: providerInstanceId ?? createdWebhook.providerInstanceId,
-              number: phoneRaw,
-              id: wamid,
-              fromMe,
-              conversation: conversationText,
-              messageType: resolvedMessageType ?? null,
-              name: typeof pushName === 'string' ? pushName : null,
-              timestamp: messageTimestamp?.toString() ?? null
-            }
-          ]
+        const includePrompt = (process.env.N8N_INCLUDE_AGENT_PROMPT ?? 'true').toLowerCase() !== 'false';
+        const normalizePrompt = (value: any) => {
+          if (!includePrompt) return null;
+          const s = typeof value === 'string' ? value : null;
+          return s ? s.slice(0, 20000) : null;
         };
+        const baseWebhookItem = {
+          instance: instanceName ?? createdWebhook.instanceId,
+          instanceId: providerInstanceId ?? createdWebhook.providerInstanceId,
+          number: phoneRaw,
+          id: wamid,
+          fromMe,
+          conversation: conversationText,
+          messageType: resolvedMessageType ?? null,
+          name: typeof pushName === 'string' ? pushName : null,
+          timestamp: messageTimestamp?.toString() ?? null
+        };
+
+        const links = instanceRecord?.id
+          ? await (this.prisma as any).evolutionInstanceAgentPrompt.findMany({
+              where: { userId, evolutionInstanceId: instanceRecord.id, active: true, agentPrompt: { active: true } },
+              include: { agentPrompt: true },
+              orderBy: [{ createdAt: 'asc' }]
+            })
+          : [];
+        const legacyPrompt = (instanceRecord as any)?.agentPrompt ?? null;
+        const payloads =
+          links.length > 0
+            ? links.map((l) => ({
+                jsonrow,
+                user_id: userId,
+                company_id: null,
+                company_name: userApiKey?.companyName ?? null,
+                instance_id: createdWebhook.instanceId,
+                provider_instance_id: createdWebhook.providerInstanceId ?? null,
+                from_number: fromNumber,
+                prompt_id: l.agentPromptId,
+                prompt_name: l.agentPrompt?.name ?? null,
+                agent_prompt: normalizePrompt(l.agentPrompt?.prompt),
+                percent: l.percent,
+                dispatch_id: `${createdWebhook.id}:${l.agentPromptId}`,
+                instance: {
+                  userId,
+                  instanceId: createdWebhook.instanceId,
+                  providerInstanceId: createdWebhook.providerInstanceId,
+                  apiKey: userApiKey?.apiKey ?? null,
+                  agent_prompt: normalizePrompt(l.agentPrompt?.prompt)
+                },
+                webhooks: [baseWebhookItem]
+              }))
+            : [
+                {
+                  jsonrow,
+                  user_id: userId,
+                  company_id: null,
+                  company_name: userApiKey?.companyName ?? null,
+                  instance_id: createdWebhook.instanceId,
+                  provider_instance_id: createdWebhook.providerInstanceId ?? null,
+                  from_number: fromNumber,
+                  prompt_id: null,
+                  prompt_name: null,
+                  agent_prompt: normalizePrompt(legacyPrompt),
+                  percent: 100,
+                  dispatch_id: `${createdWebhook.id}:legacy`,
+                  instance: {
+                    userId,
+                    instanceId: createdWebhook.instanceId,
+                    providerInstanceId: createdWebhook.providerInstanceId,
+                    apiKey: userApiKey?.apiKey ?? null,
+                    agent_prompt: normalizePrompt(legacyPrompt)
+                  },
+                  webhooks: [baseWebhookItem]
+                }
+              ];
 
         await (this.prisma as any).webhook.update({
           where: { id: createdWebhook.id },
           data: {
-            outboundJson: this.redactSecrets(outbound),
+            outboundJson: this.redactSecrets(payloads),
             outboundUrl: n8nUrl
           }
         });
 
         const maxAttempts = 3;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          const ok = await this.postJson(n8nUrl, outbound);
-          if (ok.ok) {
-            await (this.prisma as any).webhook.update({
-              where: { id: createdWebhook.id },
-              data: { status: 'sent', sentAt: new Date() }
-            });
-            break;
+        let sentCount = 0;
+        for (const outbound of payloads) {
+          let ok = false;
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const resp = await this.postJson(n8nUrl, outbound);
+            if (resp.ok) {
+              ok = true;
+              break;
+            }
+            if (attempt < maxAttempts) {
+              const waitMs = 300 * attempt;
+              await new Promise((r) => setTimeout(r, waitMs));
+            }
           }
-          if (attempt < maxAttempts) {
-            const waitMs = 300 * attempt;
-            await new Promise((r) => setTimeout(r, waitMs));
-          } else {
-            this.logger.warn('Falha ao enviar webhook ao N8N após retries');
-          }
+          if (ok) sentCount += 1;
+        }
+        const allOk = sentCount === payloads.length;
+        await (this.prisma as any).webhook.update({
+          where: { id: createdWebhook.id },
+          data: allOk ? { status: 'sent', sentAt: new Date() } : { status: 'partial' }
+        });
+        if (!allOk) {
+          this.logger.warn('Falha ao enviar webhook ao N8N para um ou mais prompts');
         }
       }
     }

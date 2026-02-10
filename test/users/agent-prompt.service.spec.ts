@@ -1,36 +1,67 @@
 import { AgentPromptService } from '../../src/users/agent-prompt.service';
 
-describe('AgentPromptService (prompt por instância)', () => {
-  it('getPromptForInstance retorna agentPrompt da EvolutionInstance', async () => {
+describe('AgentPromptService (biblioteca + vínculos por instância)', () => {
+  it('createPrompt cria um prompt na biblioteca', async () => {
     const prisma = {
-      evolutionInstance: {
-        findFirst: jest.fn(async () => ({ agentPrompt: 'PROMPT-1' }))
-      },
       agentPrompt: {
-        findUnique: jest.fn(async () => ({ prompt: 'USER-PROMPT' })),
-        upsert: jest.fn(async () => ({ prompt: 'USER-PROMPT' }))
+        create: jest.fn(async (args: any) => ({ id: 'p1', ...args.data }))
+      },
+      legacyAgentPrompt: {
+        findUnique: jest.fn(),
+        upsert: jest.fn()
       }
     };
     const svc = new AgentPromptService(prisma as any);
-    const res = await svc.getPromptForInstance('user1', 'inst1');
-    expect(res).toBe('PROMPT-1');
+    const created = await svc.createPrompt('user1', { name: 'Teste', prompt: 'Olá' });
+    expect((created as any).id).toBe('p1');
+    expect((created as any).userId).toBe('user1');
+    expect((created as any).prompt).toBe('Olá');
   });
 
-  it('updatePromptForInstance atualiza agentPrompt da EvolutionInstance', async () => {
+  it('setInstancePromptLinks valida soma 100 e persiste vínculos', async () => {
+    const tx = {
+      evolutionInstanceAgentPrompt: {
+        deleteMany: jest.fn(async () => ({})),
+        createMany: jest.fn(async () => ({}))
+      }
+    };
     const prisma = {
       evolutionInstance: {
-        findFirst: jest.fn(async () => ({ id: 'evo-1' })),
-        update: jest.fn(async () => ({ id: 'evo-1' }))
+        findFirst: jest.fn(async () => ({ id: 'evo-1', instanceId: 'inst-1', providerInstanceId: 'prov-1' }))
       },
       agentPrompt: {
-        findUnique: jest.fn(async () => ({ prompt: 'USER-PROMPT' })),
-        upsert: jest.fn(async () => ({ prompt: 'USER-PROMPT' }))
+        findMany: jest.fn(async () => [{ id: 'p1' }, { id: 'p2' }])
+      },
+      evolutionInstanceAgentPrompt: {
+        findMany: jest.fn(async () => [
+          {
+            agentPromptId: 'p1',
+            percent: 50,
+            active: true,
+            agentPrompt: { id: 'p1', name: 'P1', prompt: 'T1', active: true, createdAt: new Date(), updatedAt: new Date() }
+          },
+          {
+            agentPromptId: 'p2',
+            percent: 50,
+            active: true,
+            agentPrompt: { id: 'p2', name: 'P2', prompt: 'T2', active: true, createdAt: new Date(), updatedAt: new Date() }
+          }
+        ])
+      },
+      $transaction: jest.fn(async (cb: any) => cb(tx)),
+      legacyAgentPrompt: {
+        findUnique: jest.fn(),
+        upsert: jest.fn()
       }
     };
     const svc = new AgentPromptService(prisma as any);
-    const res = await svc.updatePromptForInstance('user1', 'inst1', 'NOVO');
-    expect(res).toBe('NOVO');
-    expect(prisma.evolutionInstance.update).toHaveBeenCalledWith({ where: { id: 'evo-1' }, data: { agentPrompt: 'NOVO' } });
+    const res = await svc.setInstancePromptLinks('user1', 'inst-1', [
+      { promptId: 'p1', percent: 50, active: true },
+      { promptId: 'p2', percent: 50, active: true }
+    ]);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.evolutionInstanceAgentPrompt.deleteMany).toHaveBeenCalledWith({ where: { userId: 'user1', evolutionInstanceId: 'evo-1' } });
+    expect(tx.evolutionInstanceAgentPrompt.createMany).toHaveBeenCalledTimes(1);
+    expect(res.links).toHaveLength(2);
   });
 });
-
