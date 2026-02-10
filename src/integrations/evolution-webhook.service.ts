@@ -283,7 +283,7 @@ export class EvolutionWebhookService {
       if (n8nUrl) {
         const userApiKey = await (this.prisma as any).user.findUnique({
           where: { id: userId },
-          select: { apiKey: true, companyName: true, company: { select: { id: true, name: true } } }
+          select: { apiKey: true, company: { select: { id: true, name: true } } }
         });
 
         const normalizePhoneNumber = (value: any) => (typeof value === 'string' ? value.replace(/\D+/g, '') : '');
@@ -364,7 +364,7 @@ export class EvolutionWebhookService {
         const percent = selectedLink ? Number(selectedLink.percentBps ?? 0) / 100 : 100;
         const occurredAt = messageTimestamp ? new Date(messageTimestamp * 1000) : new Date();
         const companyId = userApiKey?.company?.id ?? null;
-        const companyName = userApiKey?.company?.name ?? userApiKey?.companyName ?? null;
+        const companyName = userApiKey?.company?.name ?? null;
         const outbound = {
           jsonrow,
           user_id: userId,

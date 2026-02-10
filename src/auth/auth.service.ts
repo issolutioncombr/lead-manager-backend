@@ -66,7 +66,7 @@ export class AuthService {
     const hashedPassword = await bcrypt.hash(dto.password, 10);
     try {
       await this.prisma.$transaction(async (tx) => {
-        const company = await tx.company.create({
+        const company = await (tx as any).company.create({
           data: {
             name: companyName,
             cpfCnpj: dto.cpfCnpj
@@ -74,13 +74,13 @@ export class AuthService {
           select: { id: true }
         });
 
-        await tx.user.create({
+        await (tx as any).user.create({
           data: {
             email: dto.email,
             name: dto.name,
             password: hashedPassword,
             role: dto.role ?? 'user',
-            companyName,
+            companyName: null,
             companyId: company.id
           } as unknown as Prisma.UserUncheckedCreateInput
         });
@@ -102,9 +102,9 @@ export class AuthService {
   }
 
   async login(dto: LoginDto): Promise<LoginResponse> {
-    const seller = await this.prisma.seller.findUnique({
+    const seller = await (this.prisma as any).seller.findUnique({
       where: { email: dto.email },
-      include: { user: true }
+      include: { user: { include: { company: true } } }
     });
 
     if (seller?.user) {
@@ -168,7 +168,7 @@ export class AuthService {
         role: user.role,
         apiKey: user.apiKey,
         isAdmin: (user as User & { isAdmin?: boolean }).isAdmin,
-        companyName: (user as User & { companyName?: string | null }).companyName ?? null
+        companyName: (user as any)?.company?.name ?? null
       },
       seller: seller
         ? {

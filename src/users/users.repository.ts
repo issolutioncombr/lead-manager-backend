@@ -12,11 +12,11 @@ export class UsersRepository {
   }
 
   findByEmail(email: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { email } });
+    return (this.prisma.user as any).findUnique({ where: { email }, include: { company: true } });
   }
 
   findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({ where: { id } });
+    return (this.prisma.user as any).findUnique({ where: { id }, include: { company: true } });
   }
 
   findApiKeyById(id: string): Promise<{ apiKey: string } | null> {
@@ -38,9 +38,10 @@ export class UsersRepository {
       isAdmin?: boolean;
     }>
   > {
-    return this.prisma.user
+    return (this.prisma as any).user
       .findMany({
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
+        include: { company: { select: { name: true } } }
       })
       .then((rows) =>
         rows.map((r) => ({
@@ -49,7 +50,7 @@ export class UsersRepository {
           email: r.email,
           role: r.role,
           createdAt: r.createdAt,
-          companyName: (r as { companyName?: string | null }).companyName ?? null,
+          companyName: (r as any)?.company?.name ?? null,
           isApproved: (r as { isApproved?: boolean }).isApproved,
           isAdmin: (r as { isAdmin?: boolean }).isAdmin
         }))
@@ -59,9 +60,10 @@ export class UsersRepository {
   findPendingApprovals(): Promise<
     Array<{ id: string; name: string; email: string; createdAt: Date; companyName?: string | null }>
   > {
-    return this.prisma.user
+    return (this.prisma as any).user
       .findMany({
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
+        include: { company: { select: { name: true } } }
       })
       .then((rows) =>
         rows
@@ -71,7 +73,7 @@ export class UsersRepository {
             name: r.name,
             email: r.email,
             createdAt: r.createdAt,
-            companyName: (r as { companyName?: string | null }).companyName ?? null
+            companyName: (r as any)?.company?.name ?? null
           }))
       );
   }
