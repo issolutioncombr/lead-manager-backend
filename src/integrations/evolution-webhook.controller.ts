@@ -8,9 +8,17 @@ export class EvolutionWebhookController {
   private readonly buckets = new Map<string, { count: number; resetAt: number }>();
   constructor(private readonly webhookService: EvolutionWebhookService) {}
 
-  private ensureAccess(tokenHeader: string | undefined) {
+  private ensureAccess(tokenHeader: string | undefined, payload?: any) {
     const expected = process.env.EVOLUTION_WEBHOOK_TOKEN;
     if (expected && tokenHeader !== expected) {
+      const instance = typeof payload?.instance === 'string' ? payload.instance : null;
+      const eventRaw = (payload?.event ?? payload?.eventType ?? payload?.body?.event ?? null) as any;
+      const event = typeof eventRaw === 'string' ? eventRaw : null;
+      const providerInstanceIdRaw = payload?.data?.instanceId ?? payload?.body?.instanceId ?? null;
+      const providerInstanceId = typeof providerInstanceIdRaw === 'string' ? providerInstanceIdRaw : null;
+      this.logger.warn(
+        `Webhook Evolution rejeitado (token invalido). event=${event ?? 'null'} instance=${instance ?? 'null'} providerInstanceId=${providerInstanceId ?? 'null'} hasToken=${tokenHeader ? 'yes' : 'no'}`
+      );
       throw new UnauthorizedException();
     }
     const nowMs = Date.now();
@@ -31,7 +39,7 @@ export class EvolutionWebhookController {
   @Post()
   @HttpCode(HttpStatus.OK)
   async handleWebhook(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     // Processa assincronamente para não travar a Evolution
     // Em produção, idealmente usaria uma fila (BullMQ)
     this.webhookService.handleWebhook(payload).catch((err) => {
@@ -45,7 +53,7 @@ export class EvolutionWebhookController {
   @Post('connection-update')
   @HttpCode(HttpStatus.OK)
   async handleConnectionUpdate(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     this.webhookService.handleConnectionUpdate(payload).catch(() => {
       this.logger.warn('Falha ao processar connection-update');
     });
@@ -56,7 +64,7 @@ export class EvolutionWebhookController {
   @Post('messages-upsert')
   @HttpCode(HttpStatus.OK)
   async handleMessagesUpsert(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     this.webhookService.handleWebhook(payload).catch(() => {
       this.logger.warn('Falha ao processar messages-upsert');
     });
@@ -67,7 +75,7 @@ export class EvolutionWebhookController {
   @Post('messages-update')
   @HttpCode(HttpStatus.OK)
   async handleMessagesUpdate(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     this.webhookService.handleMessagesUpdate(payload).catch(() => {
       this.logger.warn('Falha ao processar messages-update');
     });
@@ -78,7 +86,7 @@ export class EvolutionWebhookController {
   @Post('contacts-update')
   @HttpCode(HttpStatus.OK)
   async handleContactsUpdate(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     this.webhookService.handleContactsUpdate(payload).catch(() => {
       this.logger.warn('Falha ao processar contacts-update');
     });
@@ -89,7 +97,7 @@ export class EvolutionWebhookController {
   @Post('chats-update')
   @HttpCode(HttpStatus.OK)
   async handleChatsUpdate(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     this.webhookService.handleChatsUpdate(payload).catch(() => {
       this.logger.warn('Falha ao processar chats-update');
     });
@@ -100,7 +108,7 @@ export class EvolutionWebhookController {
   @Post('chats-upsert')
   @HttpCode(HttpStatus.OK)
   async handleChatsUpsert(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     this.webhookService.handleChatsUpsert(payload).catch(() => {
       this.logger.warn('Falha ao processar chats-upsert');
     });
@@ -111,7 +119,7 @@ export class EvolutionWebhookController {
   @Post(':event')
   @HttpCode(HttpStatus.OK)
   async handleGenericEvent(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
-    this.ensureAccess(tokenHeader);
+    this.ensureAccess(tokenHeader, payload);
     await this.webhookService.dispatchByEvent(payload).catch(() => {
       this.logger.warn('Falha ao processar evento genérico');
     });
