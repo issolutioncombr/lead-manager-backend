@@ -290,8 +290,15 @@ export class EvolutionWebhookService {
         const contactNumber = normalizePhoneNumber(phoneRaw ?? null);
         const senderNumber = normalizePhoneNumber(payload?.body?.sender ?? null);
         const destinationNumber = normalizePhoneNumber(payload?.body?.destination ?? null);
-        const fromNumber = (fromMe ? senderNumber : contactNumber) || null;
-        const toNumber = (fromMe ? (destinationNumber || contactNumber) : (senderNumber || destinationNumber)) || null;
+        const instanceNumber =
+          senderNumber ||
+          normalizePhoneNumber(payload?.instance ?? null) ||
+          normalizePhoneNumber(instanceName ?? null) ||
+          normalizePhoneNumber(createdWebhook.instanceId ?? null) ||
+          null;
+        const contactNumberResolved = contactNumber || destinationNumber || null;
+        const fromNumber = (fromMe ? instanceNumber : contactNumberResolved) || null;
+        const toNumber = (fromMe ? (destinationNumber || contactNumberResolved) : (instanceNumber || destinationNumber)) || null;
         const includePrompt = (process.env.N8N_INCLUDE_AGENT_PROMPT ?? 'true').toLowerCase() !== 'false';
         const normalizePrompt = (value: any) => {
           if (!includePrompt) return null;
@@ -384,11 +391,7 @@ export class EvolutionWebhookService {
           },
           dispatch_id: selectedLink?.agentPromptId ? `${createdWebhook.id}:${selectedLink.agentPromptId}` : `${createdWebhook.id}:legacy`,
           instance: {
-            userId,
-            instanceId: createdWebhook.instanceId,
-            providerInstanceId: createdWebhook.providerInstanceId,
-            apiKey: userApiKey?.apiKey ?? null,
-            agent_prompt: selectedLink ? normalizePrompt(selectedLink?.agentPrompt?.prompt) : normalizePrompt(legacyPrompt)
+            apiKey: userApiKey?.apiKey ?? null
           },
           webhooks: [baseWebhookItem]
         };

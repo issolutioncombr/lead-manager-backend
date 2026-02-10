@@ -167,7 +167,7 @@ describe('EvolutionWebhookService outbound payload (messages.upsert)', () => {
     const args = (global.fetch as any).mock.calls[0];
     const sentBody = JSON.parse(args[1].body);
     expect(sentBody.agent_prompt).toBe('PROMPT-DA-INST');
-    expect(sentBody.instance.agent_prompt).toBe('PROMPT-DA-INST');
+    expect(sentBody.instance.apiKey).toBe('apikey-1');
     expect(sentBody.company_id).toBe('comp-1');
     expect(sentBody.company_name).toBe('Company ACME');
   });
