@@ -47,6 +47,7 @@ export class AppointmentsRepository {
     const { page = 1, limit = 20, status, start, end, search, leadId, appointmentId } = query;
     const parsedStart = start ? parseRangeStart(start) : undefined;
     const parsedEnd = end ? parseRangeEnd(end) : undefined;
+    const now = new Date();
     const where: Prisma.AppointmentWhereInput = {
       userId,
       ...(leadId ? { leadId } : {}),
@@ -85,7 +86,7 @@ export class AppointmentsRepository {
             }
           },
           sellerVideoCallAccesses: {
-            where: { status: 'ACTIVE' },
+            where: { status: 'ACTIVE', OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
             include: {
               seller: { select: { id: true, name: true, email: true } }
             }
@@ -100,12 +101,19 @@ export class AppointmentsRepository {
   }
 
   findById(userId: string, id: string) {
-    return this.prisma.appointment.findFirst({
+    const now = new Date();
+    return (this.prisma.appointment.findFirst({
       where: { id, userId },
       include: {
-        lead: true
+        lead: true,
+        sellerVideoCallAccesses: {
+          where: { status: 'ACTIVE', OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+          include: {
+            seller: { select: { id: true, name: true, email: true } }
+          }
+        }
       }
-    });
+    } as any) as any);
   }
 
   create(

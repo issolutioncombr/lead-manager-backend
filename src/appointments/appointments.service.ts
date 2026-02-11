@@ -24,10 +24,20 @@ export class AppointmentsService {
 
   async list(actor: AuthenticatedActor, query: ListAppointmentsDto): Promise<PaginatedAppointments> {
     if (actor.sellerId) {
-      const scope = await this.access.requireActiveLeadScope(actor.userId, actor.sellerId);
+      const link = await this.access.getActiveLinkForSeller(actor.userId, actor.sellerId);
+      if (!link) {
+        return {
+          data: [],
+          total: 0,
+          page: query.page ?? 1,
+          limit: query.limit ?? 20
+        };
+      }
+
+      const q: any = query;
       return this.appointmentsRepository.findMany(actor.userId, {
-        ...query,
-        ...(scope.appointmentId ? { appointmentId: scope.appointmentId } : { leadId: scope.leadId })
+        ...q,
+        ...(link.appointmentId ? { appointmentId: link.appointmentId } : { leadId: link.leadId })
       });
     }
 

@@ -105,22 +105,32 @@ export class SellerVideoCallAccessService {
     }
 
     const created = await this.prisma.$transaction(async (tx) => {
-      if (effectiveAppointmentId) {
-        await (tx as any).sellerVideoCallAccess.updateMany({
-          where: {
-            status: 'ACTIVE',
-            sellerId: { not: sellerId },
-            leadId,
-            OR: [{ appointmentId: effectiveAppointmentId }, { appointmentId: null }]
-          },
-          data: { status: 'REVOKED' }
-        });
-      }
-
       await (tx as any).sellerVideoCallAccess.updateMany({
-        where: { sellerId, status: 'ACTIVE' },
+        where: {
+          sellerId,
+          status: 'ACTIVE',
+          ...(effectiveAppointmentId ? { appointmentId: { not: effectiveAppointmentId } } : {})
+        },
         data: { status: 'REVOKED' }
       });
+
+      if (effectiveAppointmentId) {
+        const existingLink = await (tx as any).sellerVideoCallAccess.findFirst({
+          where: { sellerId, appointmentId: effectiveAppointmentId }
+        });
+
+        if (existingLink) {
+          return (tx as any).sellerVideoCallAccess.update({
+            where: { id: existingLink.id },
+            data: {
+              leadId,
+              appointmentId: effectiveAppointmentId,
+              status: 'ACTIVE',
+              expiresAt
+            }
+          });
+        }
+      }
 
       return (tx as any).sellerVideoCallAccess.create({
         data: {
