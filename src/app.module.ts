@@ -21,6 +21,8 @@ import { SellerAvailabilityModule } from './seller-availability/seller-availabil
 import { PhoneInstancesModule } from './phone-instances/phone-instances.module';
 import { WebhookConfigsModule } from './webhook-configs/webhook-configs.module';
 import { BotButtonsModule } from './bot-buttons/bot-buttons.module';
+import { SellerNotesModule } from './seller-notes/seller-notes.module';
+import { SellerRemindersModule } from './seller-reminders/seller-reminders.module';
 
 @Module({
   imports: [
@@ -43,7 +45,9 @@ import { BotButtonsModule } from './bot-buttons/bot-buttons.module';
     PhoneInstancesModule,
     WebhookConfigsModule
     ,
-    BotButtonsModule
+    BotButtonsModule,
+    SellerNotesModule,
+    SellerRemindersModule
   ],
   providers: [
     {

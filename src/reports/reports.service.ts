@@ -158,6 +158,90 @@ export class ReportsService {
     };
   }
 
+  async appointmentsBySeller(
+    userId: string,
+    filters: DateRange & { sellerId?: string; status?: AppointmentStatus }
+  ) {
+    const now = new Date();
+    const links = await (this.prisma as any).sellerVideoCallAccess.findMany({
+      where: {
+        status: 'ACTIVE',
+        appointmentId: { not: null },
+        seller: { userId, ...(filters.sellerId ? { id: filters.sellerId } : {}) },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        appointment: {
+          userId,
+          ...(filters.status ? { status: filters.status } : {}),
+          start: filters.start ? { gte: new Date(filters.start) } : undefined,
+          end: filters.end ? { lte: new Date(filters.end) } : undefined
+        }
+      },
+      include: {
+        seller: { select: { id: true, name: true, email: true } },
+        appointment: {
+          select: {
+            id: true,
+            start: true,
+            end: true,
+            status: true,
+            meetLink: true,
+            createdAt: true,
+            lead: { select: { id: true, name: true, email: true, contact: true, stage: true } }
+          }
+        }
+      },
+      orderBy: [{ appointment: { start: 'desc' } }]
+    });
+
+    const appointmentIds: string[] = Array.from(
+      new Set(
+        (links as any[])
+          .map((l) => (l?.appointmentId ? String(l.appointmentId) : null))
+          .filter((id: string | null): id is string => !!id)
+      )
+    );
+    const sellerIds: string[] = Array.from(new Set((links as any[]).map((l) => String(l?.sellerId))));
+
+    const notesAgg: Array<{
+      sellerId: string;
+      appointmentId: string;
+      _count: { _all: number };
+      _max: { updatedAt: Date | null };
+    }> = appointmentIds.length
+      ? ((await (this.prisma as any).sellerCallNote.groupBy({
+          by: ['sellerId', 'appointmentId'],
+          where: {
+            userId,
+            sellerId: { in: sellerIds },
+            appointmentId: { in: appointmentIds }
+          },
+          _count: { _all: true },
+          _max: { updatedAt: true }
+        })) as any)
+      : [];
+
+    const notesMap = new Map<string, { count: number; lastUpdatedAt: Date | null }>();
+    notesAgg.forEach((row) => {
+      notesMap.set(`${row.sellerId}:${row.appointmentId}`, {
+        count: row._count?._all ?? 0,
+        lastUpdatedAt: row._max?.updatedAt ?? null
+      });
+    });
+
+    return links.map((link: any) => {
+      const k = `${link.sellerId}:${link.appointmentId}`;
+      const agg = notesMap.get(k) ?? { count: 0, lastUpdatedAt: null };
+      return {
+        sellerId: link.seller.id,
+        sellerName: link.seller.name,
+        sellerEmail: link.seller.email,
+        appointment: link.appointment,
+        notesCount: agg.count,
+        lastNoteUpdatedAt: agg.lastUpdatedAt
+      };
+    });
+  }
+
   async dashboard(userId: string, date?: string) {
     const range = this.resolveDayRange(date);
 

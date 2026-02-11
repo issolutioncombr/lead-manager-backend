@@ -91,6 +91,8 @@ model User {
   webhookConfigs      WebhookConfig[]
   botActionLogs       BotActionLog[]
   botButtons          BotButton[]
+  sellerCallNotes     SellerCallNote[]
+  sellerReminders     SellerReminder[]
 
   @@index([companyId])
 }
@@ -194,6 +196,8 @@ model Seller {
   passwordResetTokens   PasswordResetToken[]
   availabilitySlots     SellerAvailability[]
   videoCallAccesses     SellerVideoCallAccess[]
+  callNotes             SellerCallNote[]
+  reminders             SellerReminder[]
 
   @@index([userId])
   @@map("sellers")
@@ -203,6 +207,12 @@ enum SellerAccessStatus {
   ACTIVE
   REVOKED
   EXPIRED
+}
+
+enum ReminderStatus {
+  PENDING
+  DONE
+  CANCELED
 }
 
 model SellerVideoCallAccess {
@@ -223,6 +233,45 @@ model SellerVideoCallAccess {
   @@index([sellerId, status])
   @@index([leadId, status])
   @@map("seller_video_call_access")
+}
+
+model SellerCallNote {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  sellerId      String   @map("seller_id")
+  appointmentId String   @map("appointment_id")
+  title         String?
+  content       String
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seller      Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sellerId])
+  @@index([appointmentId])
+  @@map("seller_call_notes")
+}
+
+model SellerReminder {
+  id        String         @id @default(cuid())
+  userId    String         @map("user_id")
+  sellerId  String         @map("seller_id")
+  title     String
+  content   String?
+  remindAt  DateTime       @map("remind_at")
+  status    ReminderStatus @default(PENDING)
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  @@index([sellerId, remindAt])
+  @@index([userId, remindAt])
+  @@map("seller_reminders")
 }
 
 model SellerAvailability {
@@ -476,6 +525,7 @@ model Appointment {
   lead          Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
   user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   sellerVideoCallAccesses SellerVideoCallAccess[]
+  sellerCallNotes SellerCallNote[]
 
   @@index([leadId])
   @@index([userId])
