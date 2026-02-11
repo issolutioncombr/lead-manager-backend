@@ -254,14 +254,21 @@ export class EvolutionIntegrationService {
     if (!record) {
       throw new NotFoundException('Instancia Evolution nao encontrada.');
     }
-    const meta: any = record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata) ? record.metadata : {};
     const { resolvedWebhookUrl } = await this.resolveAutoSlotConfiguration(userId);
-    const webhookUrl = this.normalizeWebhookUrl(meta?.webhookUrl ?? resolvedWebhookUrl);
+    const meta = this.asJsonObject(record.metadata);
+    const webhookUrl = this.normalizeWebhookUrl(typeof meta.webhookUrl === 'string' ? meta.webhookUrl : resolvedWebhookUrl);
     await this.syncWebhookForInstance(userId, record.instanceId, webhookUrl);
     return { instanceId: record.instanceId, providerInstanceId: record.providerInstanceId ?? null, webhookUrl };
   }
 
-  private normalizeWebhookUrl(value: any): string {
+  private asJsonObject(value: JsonValue | null | undefined): JsonObject {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as JsonObject;
+    }
+    return {};
+  }
+
+  private normalizeWebhookUrl(value: unknown): string {
     const s = typeof value === 'string' ? value.trim() : '';
     if (!s) return s;
     const stripped = s.replace(/^[`'"]+/, '').replace(/[`'"]+$/, '').trim();
@@ -346,13 +353,13 @@ export class EvolutionIntegrationService {
     if (!existing) {
       throw new NotFoundException('Instancia Evolution nao encontrada para sincronizar webhook.');
     }
-    const meta: any = existing?.metadata && typeof existing.metadata === 'object' && !Array.isArray(existing.metadata) ? existing.metadata : {};
+    const meta = this.asJsonObject(existing.metadata);
     const patched = {
       ...meta,
       webhookUrl,
       lastWebhookSyncAt: nowIso
     };
-    await this.evolutionModel().update({ where: { id: existing.id }, data: { metadata: patched } } as any);
+    await this.evolutionModel().update({ where: { id: existing.id }, data: { metadata: patched } });
   }
 
   private resolveSlotConfiguration(
