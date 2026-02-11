@@ -16,15 +16,9 @@ WHERE l."created_by_user_id" IS NOT NULL
     WHERE u."id" = l."created_by_user_id"
   );
 
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_constraint
-    WHERE conname = 'agent_prompt_library_created_by_user_id_fkey'
-  ) THEN
-    ALTER TABLE "agent_prompt_library"
-      ADD CONSTRAINT "agent_prompt_library_created_by_user_id_fkey"
-      FOREIGN KEY ("created_by_user_id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-  END IF;
-END $$;
+ALTER TABLE "agent_prompt_library"
+  DROP CONSTRAINT IF EXISTS "agent_prompt_library_created_by_user_id_fkey";
+
+ALTER TABLE "agent_prompt_library"
+  ADD CONSTRAINT "agent_prompt_library_created_by_user_id_fkey"
+  FOREIGN KEY ("created_by_user_id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
