@@ -22,10 +22,11 @@ export class LeadStatusWebhookService {
   private readonly logger = new Logger(LeadStatusWebhookService.name);
   private readonly webhookUrl: string | null;
   private readonly timezone: string;
+  private readonly disabledUrls = new Set(['https://renovo-ia-n8n.ogy936.easypanel.host/webhook/sos-kommo']);
 
   constructor(private readonly prisma: PrismaService) {
     const configuredUrl = (process.env.LEAD_STATUS_WEBHOOK_URL ?? '').trim();
-    this.webhookUrl = configuredUrl || 'https://renovo-ia-n8n.ogy936.easypanel.host/webhook/sos-kommo';
+    this.webhookUrl = configuredUrl || null;
     const configuredTimezone = (process.env.LEAD_STATUS_WEBHOOK_TZ ?? '').trim();
     this.timezone = configuredTimezone || 'America/Sao_Paulo';
   }
@@ -33,6 +34,11 @@ export class LeadStatusWebhookService {
   async notifyLeadStageChange(params: LeadStageWebhookParams): Promise<void> {
     if (!this.webhookUrl) {
       this.logger.warn('URL do webhook de status de lead nao configurada; notificacao ignorada.');
+      return;
+    }
+
+    if (this.disabledUrls.has(this.webhookUrl) || this.webhookUrl.includes('/webhook/sos-kommo')) {
+      this.logger.warn('Webhook antigo de status de lead desabilitado para evitar envio duplicado.');
       return;
     }
 
