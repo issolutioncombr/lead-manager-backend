@@ -25,6 +25,9 @@ import { SellerNotesModule } from './seller-notes/seller-notes.module';
 import { SellerRemindersModule } from './seller-reminders/seller-reminders.module';
 import { LeadStatusesModule } from './lead-statuses/lead-statuses.module';
 import { MetaAdsModule } from './meta-ads/meta-ads.module';
+import { AdminModule } from './admin/admin.module';
+import { ManualPromptsModule } from './manual-prompts/manual-prompts.module';
+import { N8nModule } from './n8n/n8n.module';
 
 @Module({
   imports: [
@@ -51,7 +54,10 @@ import { MetaAdsModule } from './meta-ads/meta-ads.module';
     SellerNotesModule,
     SellerRemindersModule,
     LeadStatusesModule,
-    MetaAdsModule
+    MetaAdsModule,
+    AdminModule,
+    ManualPromptsModule,
+    N8nModule
   ],
   providers: [
     {

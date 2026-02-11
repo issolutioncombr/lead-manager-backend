@@ -1,6 +1,8 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { assertSuperAdmin } from '../common/super-admin';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateAgentPromptLibraryDto } from './dto/create-agent-prompt-library.dto';
 import { SetDestinationPromptAssignmentDto } from './dto/set-destination-prompt-assignment.dto';
 import { SetInstanceAgentPromptsDto } from './dto/set-instance-agent-prompts.dto';
@@ -15,7 +17,7 @@ type AuthenticatedUser = {
 
 @Controller('agent-prompt')
 export class AgentPromptController {
-  constructor(private readonly agentPromptService: AgentPromptService) {}
+  constructor(private readonly agentPromptService: AgentPromptService, private readonly prisma: PrismaService) {}
 
   @Get()
   async getAgentPrompt(@CurrentUser() user: AuthenticatedUser, @Query('instanceId') instanceId?: string) {
@@ -45,12 +47,14 @@ export class AgentPromptController {
 
   @Post('prompts')
   async createPrompt(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAgentPromptLibraryDto) {
+    await assertSuperAdmin(this.prisma, user.userId);
     const created = await this.agentPromptService.createPrompt(user.userId, { name: dto.name ?? null, prompt: dto.prompt });
     return { data: created };
   }
 
   @Put('prompts/:id')
   async updatePrompt(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: UpdateAgentPromptLibraryDto) {
+    await assertSuperAdmin(this.prisma, user.userId);
     const updated = await this.agentPromptService.updatePrompt(user.userId, id, {
       name: dto.name,
       prompt: dto.prompt,
@@ -61,6 +65,7 @@ export class AgentPromptController {
 
   @Delete('prompts/:id')
   async deletePrompt(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await assertSuperAdmin(this.prisma, user.userId);
     return await this.agentPromptService.deletePrompt(user.userId, id);
   }
 

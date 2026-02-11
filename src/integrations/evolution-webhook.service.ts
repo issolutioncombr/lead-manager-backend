@@ -450,6 +450,19 @@ export class EvolutionWebhookService {
           prompt_id: selectedLink?.agentPromptId ?? null,
           prompt_name: selectedLink?.agentPrompt?.name ?? null,
           agent_prompt: selectedLink ? normalizePrompt(selectedLink?.agentPrompt?.prompt) : normalizePrompt(legacyPrompt),
+          agent: selectedLink?.agentPromptId
+            ? {
+                id: selectedLink.agentPromptId,
+                name: selectedLink?.agentPrompt?.name ?? null,
+                type: selectedLink?.agentPrompt?.promptType ?? 'USER_RAW',
+                version: selectedLink?.agentPrompt?.version ?? 1
+              }
+            : null,
+          agent_variables:
+            selectedLink?.agentPrompt?.manualConfig && typeof selectedLink.agentPrompt.manualConfig === 'object'
+              ? (selectedLink.agentPrompt.manualConfig as any)?.variables ?? null
+              : null,
+          agent_prompt_url: selectedLink?.agentPromptId ? `/n8n/agent-prompts/${selectedLink.agentPromptId}` : null,
           percent,
           assignment: {
             assigned_by: selectedLink ? assignedBy ?? 'auto' : 'legacy',

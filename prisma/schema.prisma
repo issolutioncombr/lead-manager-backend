@@ -95,6 +95,7 @@ model User {
   sellerReminders     SellerReminder[]
   leadStatuses        LeadStatus[]
   metaAdsIntegrations MetaAdsIntegration[]
+  createdAgentPrompts AgentPrompt[] @relation("AgentPromptCreatedBy")
 
   @@index([companyId])
 }
@@ -392,15 +393,22 @@ model AgentPrompt {
   name      String?
   prompt    String
   active    Boolean  @default(true)
+  promptType String  @default("USER_RAW") @map("prompt_type")
+  createdByUserId String? @map("created_by_user_id")
+  manualConfig Json? @map("manual_config")
+  version   Int      @default(1)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdBy User?    @relation("AgentPromptCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   links     EvolutionInstanceAgentPrompt[]
   assignments EvolutionInstancePromptAssignment[]
   dispatchLogs PromptDispatchLog[]
 
   @@index([userId])
+  @@index([createdByUserId])
+  @@index([userId, promptType])
   @@map("agent_prompt_library")
 }
 

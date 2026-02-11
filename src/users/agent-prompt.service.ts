@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { isSuperAdminRole } from '../common/super-admin';
 
 @Injectable()
 export class AgentPromptService {
@@ -81,11 +82,21 @@ export class AgentPromptService {
     return normalized;
   }
 
-  async listPrompts(userId: string) {
-    return await (this.prisma as any).agentPrompt.findMany({
-      where: { userId },
+  private async isRequesterSuperAdmin(requesterUserId: string) {
+    const model = (this.prisma as any).user;
+    if (!model || typeof model.findUnique !== 'function') return false;
+    const user = await model.findUnique({ where: { id: requesterUserId }, select: { role: true } });
+    return isSuperAdminRole(user?.role);
+  }
+
+  async listPrompts(requesterUserId: string) {
+    const isSuperAdmin = await this.isRequesterSuperAdmin(requesterUserId);
+    const rows = await (this.prisma as any).agentPrompt.findMany({
+      where: { userId: requesterUserId },
       orderBy: [{ updatedAt: 'desc' }]
     });
+    if (isSuperAdmin) return rows;
+    return rows.map((r: any) => ({ ...r, prompt: null }));
   }
 
   async createPrompt(userId: string, data: { name?: string | null; prompt: string }) {
@@ -99,7 +110,10 @@ export class AgentPromptService {
         userId,
         name,
         prompt,
-        active: true
+        active: true,
+        promptType: 'USER_RAW',
+        createdByUserId: userId,
+        version: 1
       }
     });
   }
@@ -107,7 +121,10 @@ export class AgentPromptService {
   async updatePrompt(userId: string, promptId: string, data: { name?: string | null; prompt?: string | null; active?: boolean }) {
     const id = (promptId ?? '').trim();
     if (!id) throw new NotFoundException('Prompt não encontrado');
-    const existing = await (this.prisma as any).agentPrompt.findFirst({ where: { id, userId }, select: { id: true } });
+    const existing = await (this.prisma as any).agentPrompt.findFirst({
+      where: { id, userId },
+      select: { id: true, promptType: true }
+    });
     if (!existing?.id) throw new NotFoundException('Prompt não encontrado');
     const update: any = {};
     if (data.name !== undefined) {
@@ -122,6 +139,7 @@ export class AgentPromptService {
       update.prompt = p;
     }
     if (data.active !== undefined) update.active = !!data.active;
+    update.version = { increment: 1 };
     return await (this.prisma as any).agentPrompt.update({ where: { id }, data: update });
   }
 
@@ -155,7 +173,10 @@ export class AgentPromptService {
   async deletePrompt(userId: string, promptId: string) {
     const id = (promptId ?? '').trim();
     if (!id) throw new NotFoundException('Prompt não encontrado');
-    const existing = await (this.prisma as any).agentPrompt.findFirst({ where: { id, userId }, select: { id: true } });
+    const existing = await (this.prisma as any).agentPrompt.findFirst({
+      where: { id, userId },
+      select: { id: true, promptType: true }
+    });
     if (!existing?.id) throw new NotFoundException('Prompt não encontrado');
     await this.prisma.$transaction(async (tx) => {
       const affected = await (tx as any).evolutionInstanceAgentPrompt.findMany({
@@ -223,6 +244,7 @@ export class AgentPromptService {
   }
 
   async listInstancePromptLinks(userId: string, instanceKey: string) {
+    const isSuperAdmin = await this.isRequesterSuperAdmin(userId);
     const inst = await this.resolveEvolutionInstanceByKey(userId, instanceKey);
     const links = await (this.prisma as any).evolutionInstanceAgentPrompt.findMany({
       where: { userId, evolutionInstanceId: inst.id },
@@ -238,8 +260,10 @@ export class AgentPromptService {
         prompt: {
           id: l.agentPrompt.id,
           name: l.agentPrompt.name,
-          prompt: l.agentPrompt.prompt,
+          prompt: isSuperAdmin ? l.agentPrompt.prompt : null,
           active: l.agentPrompt.active,
+          promptType: l.agentPrompt.promptType ?? 'USER_RAW',
+          version: l.agentPrompt.version ?? 1,
           createdAt: l.agentPrompt.createdAt,
           updatedAt: l.agentPrompt.updatedAt
         }
