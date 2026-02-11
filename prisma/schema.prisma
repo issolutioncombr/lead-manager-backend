@@ -313,6 +313,29 @@ model WhatsappPhoneInstance {
   @@map("whatsapp_phone_instance")
 }
 
+enum ConversationAgentStatus {
+  ATIVO
+  PAUSADO
+  DESATIVADO
+}
+
+model WhatsappConversationAgentStatus {
+  id             String                 @id @default(cuid())
+  userId         String
+  instanceNumber String                 @map("instance_number")
+  contactNumber  String                 @map("contact_number")
+  status         ConversationAgentStatus @default(ATIVO)
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+
+  user           User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, instanceNumber, contactNumber])
+  @@index([userId, instanceNumber])
+  @@index([userId, contactNumber])
+  @@map("whatsapp_conversation_agent_status")
+}
+
 model BotActionLog {
   id               String   @id @default(cuid())
   userId           String

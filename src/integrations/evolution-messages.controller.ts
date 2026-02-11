@@ -4,6 +4,7 @@ import { EvolutionMessagesService } from './evolution-messages.service';
 import { EvolutionSendMessageDto } from './dto/evolution-send-message.dto';
 import { EvolutionConversationQueryDto } from './dto/evolution-conversation-query.dto';
 import { EvolutionUpdatesQueryDto } from './dto/evolution-updates-query.dto';
+import { EvolutionConversationAgentStatusQueryDto, EvolutionConversationAgentStatusSetDto } from './dto/evolution-conversation-agent-status.dto';
 import { MessageEventsService } from './message-events.service';
 import { catchError, filter, from, interval, map, merge, mergeMap, Observable, of, startWith, throttleTime } from 'rxjs';
 
@@ -85,6 +86,25 @@ export class EvolutionMessagesController {
     );
     const res = await this.svc.getProfilePicUrl(user.userId, { jid: jid || undefined, phone: phone || undefined, instanceId: instanceId || undefined });
     return { profilePicUrl: res };
+  }
+
+  @Get('agent-status')
+  async getAgentStatus(@CurrentUser() user: AuthenticatedUser, @Query() query: EvolutionConversationAgentStatusQueryDto) {
+    const status = await this.svc.getConversationAgentStatus(user.userId, {
+      instanceNumber: query.instance_number,
+      contactNumber: query.contact_number
+    });
+    return { status };
+  }
+
+  @Post('agent-status')
+  async setAgentStatus(@CurrentUser() user: AuthenticatedUser, @Body() dto: EvolutionConversationAgentStatusSetDto) {
+    const value = dto.value ?? 'ATIVO';
+    return this.svc.setConversationAgentStatus(user.userId, {
+      instanceNumber: dto.instance_number,
+      contactNumber: dto.contact_number,
+      value
+    });
   }
 
   @Get('updates')

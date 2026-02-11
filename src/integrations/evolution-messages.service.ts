@@ -796,6 +796,50 @@ export class EvolutionMessagesService {
     return out;
   }
 
+  private normalizePhoneLike(value: string): string {
+    const d = String(value ?? '').replace(/\D+/g, '');
+    return d.startsWith('0') ? d.replace(/^0+/, '') : d;
+  }
+
+  async getConversationAgentStatus(
+    userId: string,
+    opts: { instanceNumber: string; contactNumber: string }
+  ): Promise<'ATIVO' | 'PAUSADO' | 'DESATIVADO'> {
+    const instanceNumber = this.normalizePhoneLike(opts.instanceNumber);
+    const contactNumber = this.normalizePhoneLike(opts.contactNumber);
+    if (!instanceNumber || !contactNumber) return 'ATIVO';
+    const record = await (this.prisma as any).whatsappConversationAgentStatus.findFirst({
+      where: { userId, instanceNumber, contactNumber },
+      select: { status: true }
+    });
+    const status = record?.status;
+    return status === 'PAUSADO' || status === 'DESATIVADO' || status === 'ATIVO' ? status : 'ATIVO';
+  }
+
+  async setConversationAgentStatus(
+    userId: string,
+    opts: { instanceNumber: string; contactNumber: string; value: 'ATIVO' | 'PAUSADO' | 'DESATIVADO' }
+  ) {
+    const instanceNumber = this.normalizePhoneLike(opts.instanceNumber);
+    const contactNumber = this.normalizePhoneLike(opts.contactNumber);
+    const value = opts.value;
+    if (!instanceNumber || instanceNumber.length < 7) {
+      throw new BadRequestException('instance_number inválido');
+    }
+    if (!contactNumber || contactNumber.length < 7) {
+      throw new BadRequestException('contact_number inválido');
+    }
+    if (value !== 'ATIVO' && value !== 'PAUSADO' && value !== 'DESATIVADO') {
+      throw new BadRequestException('value inválido');
+    }
+    const res = await (this.prisma as any).whatsappConversationAgentStatus.upsert({
+      where: { userId_instanceNumber_contactNumber: { userId, instanceNumber, contactNumber } },
+      update: { status: value },
+      create: { userId, instanceNumber, contactNumber, status: value }
+    });
+    return { status: res?.status ?? value };
+  }
+
   private async resolveInstanceCandidates(userId: string, requestedInstanceId?: string): Promise<string[]> {
     const requested = (requestedInstanceId ?? '').trim();
     if (requested) {

@@ -347,6 +347,20 @@ export class EvolutionWebhookService {
           const s = typeof value === 'string' ? value : null;
           return s ? s.slice(0, 20000) : null;
         };
+
+        const conversationAgentStatus = await (async () => {
+          const inst = instanceNumber ? normalizePhoneNumber(instanceNumber) : '';
+          const contact = contactNumberResolved ? normalizePhoneNumber(contactNumberResolved) : '';
+          if (!inst || !contact) return 'ATIVO';
+          const model = (this.prisma as any).whatsappConversationAgentStatus;
+          if (!model || typeof model.findFirst !== 'function') return 'ATIVO';
+          const record = await model.findFirst({
+            where: { userId, instanceNumber: inst, contactNumber: contact },
+            select: { status: true }
+          });
+          const status = record?.status;
+          return status === 'PAUSADO' || status === 'DESATIVADO' || status === 'ATIVO' ? status : 'ATIVO';
+        })();
         const baseWebhookItem = {
           instance: instanceName ?? createdWebhook.instanceId,
           instanceId: providerInstanceId ?? createdWebhook.providerInstanceId,
@@ -423,6 +437,7 @@ export class EvolutionWebhookService {
           provider_instance_id: createdWebhook.providerInstanceId ?? null,
           instance_number: instanceNumber,
           contact_number: contactNumberResolved,
+          conversation_agent_status: conversationAgentStatus,
           from_number: fromNumber,
           to_number: toNumber,
           prompt_id: selectedLink?.agentPromptId ?? null,
