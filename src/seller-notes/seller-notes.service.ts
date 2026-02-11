@@ -21,6 +21,10 @@ export class SellerNotesService {
     return actor.sellerId;
   }
 
+  private isCompanyUser(actor: AuthenticatedActor) {
+    return !actor.sellerId;
+  }
+
   private ensureCompanyUser(actor: AuthenticatedActor) {
     if (actor.sellerId) {
       throw new BadRequestException('Somente empresas podem acessar esta funcionalidade');
@@ -141,6 +145,7 @@ export class SellerNotesService {
         where,
         include: {
           seller: { select: { id: true, name: true, email: true } },
+          lead: { select: { id: true, name: true, email: true, contact: true, stage: true } },
           appointment: {
             select: {
               id: true,
@@ -163,15 +168,29 @@ export class SellerNotesService {
   }
 
   async create(actor: AuthenticatedActor, dto: CreateSellerCallNoteDto) {
-    const sellerId = this.ensureSellerUser(actor);
-    await this.ensureSellerBelongsToTenant(actor.userId, sellerId);
     const appointment = await this.ensureAppointmentForTenant(actor.userId, dto.appointmentId);
-    await this.ensureSellerHasActiveAccessToAppointment(actor.userId, sellerId, appointment.id);
+
+    if (actor.sellerId) {
+      const sellerId = actor.sellerId;
+      await this.ensureSellerBelongsToTenant(actor.userId, sellerId);
+      await this.ensureSellerHasActiveAccessToAppointment(actor.userId, sellerId, appointment.id);
+      return (this.prisma as any).sellerCallNote.create({
+        data: {
+          userId: actor.userId,
+          sellerId,
+          leadId: appointment.leadId,
+          appointmentId: appointment.id,
+          title: dto.title?.trim() || null,
+          content: dto.content
+        }
+      });
+    }
 
     return (this.prisma as any).sellerCallNote.create({
       data: {
         userId: actor.userId,
-        sellerId,
+        sellerId: null,
+        leadId: appointment.leadId,
         appointmentId: appointment.id,
         title: dto.title?.trim() || null,
         content: dto.content
@@ -180,14 +199,21 @@ export class SellerNotesService {
   }
 
   async update(actor: AuthenticatedActor, id: string, dto: UpdateSellerCallNoteDto) {
-    const sellerId = this.ensureSellerUser(actor);
-    await this.ensureSellerBelongsToTenant(actor.userId, sellerId);
     const existing = await (this.prisma as any).sellerCallNote.findFirst({
-      where: { id, userId: actor.userId, sellerId },
-      select: { id: true, appointmentId: true }
+      where: { id, userId: actor.userId },
+      select: { id: true, appointmentId: true, sellerId: true }
     });
     if (!existing) throw new NotFoundException('Nota não encontrada');
-    await this.ensureSellerHasActiveAccessToAppointment(actor.userId, sellerId, existing.appointmentId);
+
+    if (actor.sellerId) {
+      const sellerId = actor.sellerId;
+      await this.ensureSellerBelongsToTenant(actor.userId, sellerId);
+      if (existing.sellerId !== sellerId) throw new ForbiddenException('Acesso negado');
+      if (!existing.appointmentId) throw new BadRequestException('Nota sem video chamada vinculada');
+      await this.ensureSellerHasActiveAccessToAppointment(actor.userId, sellerId, existing.appointmentId);
+    } else {
+      if (existing.sellerId) throw new ForbiddenException('Acesso negado');
+    }
 
     return (this.prisma as any).sellerCallNote.update({
       where: { id },
@@ -199,14 +225,22 @@ export class SellerNotesService {
   }
 
   async remove(actor: AuthenticatedActor, id: string) {
-    const sellerId = this.ensureSellerUser(actor);
-    await this.ensureSellerBelongsToTenant(actor.userId, sellerId);
     const existing = await (this.prisma as any).sellerCallNote.findFirst({
-      where: { id, userId: actor.userId, sellerId },
-      select: { id: true, appointmentId: true }
+      where: { id, userId: actor.userId },
+      select: { id: true, appointmentId: true, sellerId: true }
     });
     if (!existing) throw new NotFoundException('Nota não encontrada');
-    await this.ensureSellerHasActiveAccessToAppointment(actor.userId, sellerId, existing.appointmentId);
+
+    if (actor.sellerId) {
+      const sellerId = actor.sellerId;
+      await this.ensureSellerBelongsToTenant(actor.userId, sellerId);
+      if (existing.sellerId !== sellerId) throw new ForbiddenException('Acesso negado');
+      if (!existing.appointmentId) throw new BadRequestException('Nota sem video chamada vinculada');
+      await this.ensureSellerHasActiveAccessToAppointment(actor.userId, sellerId, existing.appointmentId);
+    } else {
+      if (existing.sellerId) throw new ForbiddenException('Acesso negado');
+    }
+
     await (this.prisma as any).sellerCallNote.delete({ where: { id } });
   }
 }

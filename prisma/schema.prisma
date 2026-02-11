@@ -178,6 +178,8 @@ model Lead {
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   whatsappMessages WhatsappMessage[]
   sellerVideoCallAccesses SellerVideoCallAccess[]
+  sellerCallNotes SellerCallNote[]
+  sellerReminders SellerReminder[]
 
   @@index([userId])
 }
@@ -238,19 +240,22 @@ model SellerVideoCallAccess {
 model SellerCallNote {
   id            String   @id @default(cuid())
   userId        String   @map("user_id")
-  sellerId      String   @map("seller_id")
-  appointmentId String   @map("appointment_id")
+  sellerId      String?  @map("seller_id")
+  leadId        String   @map("lead_id")
+  appointmentId String?  @map("appointment_id")
   title         String?
   content       String
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  seller      Seller      @relation(fields: [sellerId], references: [id], onDelete: Cascade)
-  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  seller      Seller?     @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  lead        Lead        @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([sellerId])
+  @@index([leadId])
   @@index([appointmentId])
   @@map("seller_call_notes")
 }
@@ -259,6 +264,8 @@ model SellerReminder {
   id        String         @id @default(cuid())
   userId    String         @map("user_id")
   sellerId  String         @map("seller_id")
+  leadId    String?        @map("lead_id")
+  appointmentId String?    @map("appointment_id")
   title     String
   content   String?
   remindAt  DateTime       @map("remind_at")
@@ -268,9 +275,13 @@ model SellerReminder {
 
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   seller Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  lead        Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
 
   @@index([sellerId, remindAt])
   @@index([userId, remindAt])
+  @@index([leadId])
+  @@index([appointmentId])
   @@map("seller_reminders")
 }
 
@@ -526,6 +537,7 @@ model Appointment {
   user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   sellerVideoCallAccesses SellerVideoCallAccess[]
   sellerCallNotes SellerCallNote[]
+  sellerReminders SellerReminder[]
 
   @@index([leadId])
   @@index([userId])

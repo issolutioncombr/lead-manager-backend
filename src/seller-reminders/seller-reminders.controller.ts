@@ -3,6 +3,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Query } fr
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { CreateSellerReminderDto } from './dto/create-seller-reminder.dto';
 import { ListSellerRemindersDto } from './dto/list-seller-reminders.dto';
+import { ListSellerRemindersOverviewDto } from './dto/list-seller-reminders-overview.dto';
 import { UpdateSellerReminderDto } from './dto/update-seller-reminder.dto';
 import { SellerRemindersService } from './seller-reminders.service';
 
@@ -15,6 +16,11 @@ type AuthenticatedUser = {
 @Controller('seller-reminders')
 export class SellerRemindersController {
   constructor(private readonly sellerRemindersService: SellerRemindersService) {}
+
+  @Get('overview')
+  listByCompany(@CurrentUser() user: AuthenticatedUser, @Query() query: ListSellerRemindersOverviewDto) {
+    return this.sellerRemindersService.listByCompany(user, query);
+  }
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListSellerRemindersDto) {
@@ -38,4 +44,3 @@ export class SellerRemindersController {
     return;
   }
 }
-

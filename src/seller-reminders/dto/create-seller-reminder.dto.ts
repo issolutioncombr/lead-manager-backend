@@ -9,7 +9,10 @@ export class CreateSellerReminderDto {
   @IsString()
   content?: string;
 
+  @IsOptional()
+  @IsString()
+  appointmentId?: string;
+
   @IsDateString()
   remindAt!: string;
 }
-
