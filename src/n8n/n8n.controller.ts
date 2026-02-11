@@ -15,9 +15,11 @@ export class N8nController {
     @Query('api_key') apiKeyQuery?: string
   ) {
     const expectedToken = String(process.env.N8N_API_TOKEN ?? '').trim();
-    const receivedToken = String(n8nTokenHeader ?? '').trim();
-    if (!expectedToken || !receivedToken || expectedToken !== receivedToken) {
-      throw new NotFoundException();
+    if (expectedToken) {
+      const receivedToken = String(n8nTokenHeader ?? '').trim();
+      if (!receivedToken || expectedToken !== receivedToken) {
+        throw new NotFoundException();
+      }
     }
 
     const apiKey = String(apiKeyHeader ?? apiKeyQuery ?? '').trim();
