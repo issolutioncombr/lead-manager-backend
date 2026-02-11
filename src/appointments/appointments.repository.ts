@@ -20,6 +20,17 @@ export interface PaginatedAppointments {
       contact: string | null;
       stage: LeadStage | null;
     };
+    sellerVideoCallAccesses: Array<{
+      id: string;
+      sellerId: string;
+      leadId: string;
+      appointmentId: string | null;
+      status: string;
+      expiresAt: Date | null;
+      createdAt: Date;
+      updatedAt: Date;
+      seller: { id: string; name: string; email: string | null };
+    }>;
   })[];
   total: number;
   page: number;
@@ -67,6 +78,12 @@ export class AppointmentsRepository {
               email: true,
               contact: true,
               stage: true
+            }
+          },
+          sellerVideoCallAccesses: {
+            where: { status: 'ACTIVE' },
+            include: {
+              seller: { select: { id: true, name: true, email: true } }
             }
           }
         },
