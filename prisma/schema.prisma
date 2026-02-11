@@ -86,6 +86,7 @@ model User {
   webhookTokens       WebhookToken[]
   whatsappMessages    WhatsappMessage[]
   whatsappPhoneInstances WhatsappPhoneInstance[]
+  whatsappConversationAgentStatuses WhatsappConversationAgentStatus[]
   webhooks            Webhook[]
   webhookConfigs      WebhookConfig[]
   botActionLogs       BotActionLog[]
