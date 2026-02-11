@@ -1,4 +1,4 @@
-import { ForbiddenException, Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
 import { Appointment, Lead, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -99,7 +99,13 @@ export class LeadsService {
 
     const createdLead = await this.leadsRepository.create(userId, data);
 
-    await this.metaAds.dispatchLeadStageChange({ userId, lead: createdLead });
+    try {
+      await this.metaAds.dispatchLeadStageChange({ userId, lead: createdLead });
+    } catch (error) {
+      if (!(error instanceof BadRequestException)) {
+        throw error;
+      }
+    }
 
     // Lógica robusta para extrair dados do payload (suporta N8N aninhado em rawjson)
     const rawPayload = dto.rawJson || dto.rawjson;
@@ -334,7 +340,11 @@ export class LeadsService {
       await this.metaAds.dispatchLeadStageChange({
         userId,
         lead: updatedLead,
-        appointment: options?.relatedAppointment ?? null
+        appointment: options?.relatedAppointment ?? null,
+        purchase: {
+          value: dto.purchaseValue,
+          contentName: dto.purchaseContentName
+        }
       });
 
       await this.applyLeadStageToWhatsappMessage(userId, updatedLead.id, stage);

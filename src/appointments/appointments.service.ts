@@ -113,7 +113,11 @@ export class AppointmentsService {
       await this.leadsService.update(
         actor.userId,
         targetLeadId,
-        { stage: dto.leadStage },
+        {
+          stage: dto.leadStage,
+          purchaseValue: dto.purchaseValue,
+          purchaseContentName: dto.purchaseContentName
+        },
         { relatedAppointment: updatedAppointment }
       );
     }

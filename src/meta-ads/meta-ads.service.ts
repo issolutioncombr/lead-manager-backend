@@ -8,6 +8,7 @@ type DispatchLeadStagePayload = {
   userId: string;
   lead: { id: string; name: string | null; email: string | null; contact: string | null; stage: string; createdAt: Date; updatedAt: Date };
   appointment?: { id: string; start: Date; end: Date; status: string; meetLink: string | null } | null;
+  purchase?: { value?: number; contentName?: string | null } | null;
 };
 
 const sha256 = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -181,6 +182,18 @@ export class MetaAdsService {
     const stageSlug = String(params.lead.stage).trim().toUpperCase();
     const stageLabel = await this.resolveStageLabel(params.userId, stageSlug);
 
+    const isPurchaseEvent = String(event.metaEventName).trim().toLowerCase() === 'purchase';
+    const purchaseValue = params.purchase?.value;
+    const purchaseContentName = params.purchase?.contentName ? String(params.purchase.contentName).trim() : '';
+    if (isPurchaseEvent) {
+      if (purchaseValue === undefined || Number.isNaN(purchaseValue) || purchaseValue <= 0) {
+        throw new BadRequestException('Para o evento Purchase, informe um value valido.');
+      }
+      if (!purchaseContentName) {
+        throw new BadRequestException('Para o evento Purchase, informe o content_name.');
+      }
+    }
+
     const metaPayload: Record<string, any> = {
       data: [
         {
@@ -198,6 +211,16 @@ export class MetaAdsService {
         }
       ]
     };
+
+    if (isPurchaseEvent) {
+      metaPayload.data[0].custom_data = {
+        ...metaPayload.data[0].custom_data,
+        currency: 'BRL',
+        value: purchaseValue,
+        content_name: purchaseContentName,
+        converted: true
+      };
+    }
 
     if (integration.testEventCode) {
       metaPayload.test_event_code = integration.testEventCode;
