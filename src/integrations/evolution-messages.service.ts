@@ -112,6 +112,29 @@ export class EvolutionMessagesService {
     const now = new Date();
     const instanceMeta = await this.getInstanceMetaMap(userId);
     const initialInstanceId = payload.instanceId ? (instanceMeta.get(payload.instanceId)?.publicId ?? payload.instanceId) : null;
+    const resolveInstanceNumber = (instanceId: string | null) => {
+      if (!instanceId) return null;
+      const meta = instanceMeta.get(instanceId) ?? null;
+      const raw = meta?.number ?? null;
+      const digits = raw ? normalizePhone(raw) : '';
+      return digits && digits.length >= 7 ? digits : null;
+    };
+
+    const pauseConversationIfPossible = async (instanceId: string | null) => {
+      const instanceNumber = resolveInstanceNumber(instanceId);
+      if (!instanceNumber) return;
+      try {
+        await this.setConversationAgentStatus(userId, {
+          instanceNumber,
+          contactNumber: normalized,
+          value: 'PAUSADO'
+        });
+      } catch {
+        return;
+      }
+    };
+
+    await pauseConversationIfPossible(initialInstanceId);
 
     const record: Record<string, any> = {
       userId,
@@ -172,6 +195,7 @@ export class EvolutionMessagesService {
           rawJson: { ...(record.rawJson ?? {}), providerResp, instanceId: publicInstanceId }
         }
       });
+      await pauseConversationIfPossible(publicInstanceId);
       this.events.emit({ userId, phoneRaw: normalized, event: 'messages.send', wamid });
       this.logger.log(
         `sendMessage ok userId=${userId} instanceId=${payload.instanceId ?? 'auto'} phone=${this.maskPhone(normalized)} wamid=${wamid} status=SENT`
