@@ -35,4 +35,4 @@ COPY prisma ./prisma
 RUN chown -R node:node /app
 USER node
 EXPOSE 3001
-CMD ["sh", "-c", "npx prisma generate && if [ \"${SKIP_PRISMA_MIGRATE}\" != \"true\" ]; then npx prisma migrate deploy || echo \"prisma migrate deploy falhou; iniciando app mesmo assim (SKIP_PRISMA_MIGRATE=true para suprimir)\"; fi; node dist/main.js"]
+CMD ["sh", "-c", "npx prisma generate && npx prisma migrate deploy && node dist/main.js"]
