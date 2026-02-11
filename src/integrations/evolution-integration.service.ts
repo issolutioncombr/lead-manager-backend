@@ -270,7 +270,7 @@ export class EvolutionIntegrationService {
 
   private readWebhookEvents(): string[] {
     const raw = (process.env.EVOLUTION_WEBHOOK_EVENTS ?? '').trim();
-    const normalize = (v: string) => v.trim().toUpperCase().replace(/[.\-]/g, '_');
+    const normalize = (v: string) => v.trim().toUpperCase().replace(/[.-]/g, '_');
     const parsed = raw
       ? raw
           .split(/[,\s]+/)

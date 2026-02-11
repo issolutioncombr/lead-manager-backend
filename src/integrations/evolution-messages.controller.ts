@@ -17,6 +17,11 @@ export class EvolutionMessagesController {
     private readonly events: MessageEventsService
   ) {}
 
+  private maskPhone(value: string | undefined | null) {
+    const digits = String(value ?? '').replace(/\D+/g, '');
+    return digits.length >= 4 ? `${digits.slice(0, 2)}*****${digits.slice(-2)}` : 'invalid';
+  }
+
   @Post('send')
   async send(@CurrentUser() user: AuthenticatedUser, @Body() dto: EvolutionSendMessageDto) {
     return this.svc.sendMessage(user.userId, {
@@ -32,8 +37,12 @@ export class EvolutionMessagesController {
   @Get('conversation')
   async conversation(
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-request-id') requestId: string | undefined,
     @Query() query: EvolutionConversationQueryDto
   ) {
+    this.logger.log(
+      `conversation userId=${user.userId} phone=${this.maskPhone(query.phone)} instanceId=${query.instanceId ?? 'auto'} source=${query.source ?? '-'} requestId=${requestId ?? '-'}`
+    );
     return this.svc.listConversation(user.userId, query.phone, {
       direction: query.direction,
       page: query.page,
@@ -50,10 +59,14 @@ export class EvolutionMessagesController {
   @Get('chats')
   async chats(
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-request-id') requestId: string | undefined,
     @Query('instanceId') instanceId?: string,
     @Query('limit') limit?: string,
     @Query('source') source?: 'provider' | 'local'
   ) {
+    this.logger.log(
+      `chats userId=${user.userId} instanceId=${instanceId ?? 'auto'} source=${source ?? '-'} requestId=${requestId ?? '-'}`
+    );
     const data = await this.svc.listChats(user.userId, { instanceId: instanceId || undefined, limit: limit ? parseInt(limit, 10) || 100 : 100, source });
     return { data };
   }
@@ -61,10 +74,15 @@ export class EvolutionMessagesController {
   @Get('profile-pic')
   async profilePic(
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-request-id') requestId: string | undefined,
     @Query('jid') jid?: string,
     @Query('phone') phone?: string,
     @Query('instanceId') instanceId?: string
   ) {
+    const inferredPhone = phone ?? (jid ? jid.split('@')[0] : null);
+    this.logger.log(
+      `profile-pic userId=${user.userId} phone=${this.maskPhone(inferredPhone)} instanceId=${instanceId ?? 'auto'} requestId=${requestId ?? '-'}`
+    );
     const res = await this.svc.getProfilePicUrl(user.userId, { jid: jid || undefined, phone: phone || undefined, instanceId: instanceId || undefined });
     return { profilePicUrl: res };
   }
@@ -72,8 +90,12 @@ export class EvolutionMessagesController {
   @Get('updates')
   async updates(
     @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-request-id') requestId: string | undefined,
     @Query() query: EvolutionUpdatesQueryDto
   ) {
+    this.logger.log(
+      `updates userId=${user.userId} phone=${this.maskPhone(query.phone)} instanceId=${query.instanceId ?? 'auto'} source=${query.source ?? '-'} requestId=${requestId ?? '-'}`
+    );
     return this.svc.listUpdates(user.userId, query.phone, {
       instanceId: query.instanceId,
       source: query.source,

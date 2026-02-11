@@ -128,6 +128,20 @@ describe('EvolutionMessagesService (TS)', () => {
     await expect(svc.listUpdates('user1', '+5511999999999', { source: 'provider' } as any)).rejects.toBeInstanceOf(BadRequestException);
   });
 
+  it('listUpdates com instanceId inclui mensagens legadas sem instanceId', async () => {
+    prisma.evolutionInstance.findFirst = jest.fn(async () => ({ instanceId: 'inst1', providerInstanceId: 'prov1' })) as any;
+    prisma.whatsappMessage.findMany = jest.fn(async () => []) as any;
+
+    await svc.listUpdates('user1', '+5511999999999', { source: 'local', instanceId: 'inst1', limit: 10 });
+    const call = (prisma.whatsappMessage.findMany as any).mock.calls[0][0];
+    expect(call.where.OR).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ instanceId: { in: expect.arrayContaining(['inst1', 'prov1']) } }),
+        expect.objectContaining({ instanceId: null })
+      ])
+    );
+  });
+
   it('listConversation pagina para trás com beforeTimestamp e retorna nextCursor/hasMore', async () => {
     prisma.whatsappMessage.findMany = jest.fn(async () => [
       {

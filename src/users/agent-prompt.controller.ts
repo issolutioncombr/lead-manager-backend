@@ -1,11 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Post, Put, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { CreateAgentPromptLibraryDto } from 'src/users/dto/create-agent-prompt-library.dto';
-import { SetDestinationPromptAssignmentDto } from 'src/users/dto/set-destination-prompt-assignment.dto';
-import { SetInstanceAgentPromptsDto } from 'src/users/dto/set-instance-agent-prompts.dto';
-import { UpdateAgentPromptLibraryDto } from 'src/users/dto/update-agent-prompt-library.dto';
-import { UpdateAgentPromptDto } from 'src/users/dto/update-agent-prompt.dto';
+import { CreateAgentPromptLibraryDto } from './dto/create-agent-prompt-library.dto';
+import { SetDestinationPromptAssignmentDto } from './dto/set-destination-prompt-assignment.dto';
+import { SetInstanceAgentPromptsDto } from './dto/set-instance-agent-prompts.dto';
+import { UpdateAgentPromptLibraryDto } from './dto/update-agent-prompt-library.dto';
+import { UpdateAgentPromptDto } from './dto/update-agent-prompt.dto';
 import { AgentPromptService } from './agent-prompt.service';
 
 type AuthenticatedUser = {

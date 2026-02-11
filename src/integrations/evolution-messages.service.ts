@@ -432,18 +432,35 @@ export class EvolutionMessagesService {
       return `${digits}@s.whatsapp.net`;
     })();
     if (!jid) return null;
-    const instanceKey = String(opts.instanceId ?? '').trim();
+    const instanceKeyRaw = String(opts.instanceId ?? '').trim();
+    const instanceKey = instanceKeyRaw && instanceKeyRaw.toLowerCase() !== 'unknown' ? instanceKeyRaw : '';
     if (instanceKey) {
       const cacheKey = `${userId}|${instanceKey}|${jid}`;
       const now = Date.now();
       const cached = this.profilePicCache.get(cacheKey);
       if (cached && cached.expiresAt > now) return cached.value;
-      const url = await this.evolution.fetchProfilePicUrl({ instanceId: instanceKey, jid }).catch(() => null);
-      const value = typeof url === 'string' && url.trim() ? url.trim() : null;
+      const candidates = await this.resolveInstanceCandidates(userId, instanceKey);
+      let last: string | null = null;
+      for (const instanceId of candidates.length ? candidates : [instanceKey]) {
+        const id = String(instanceId ?? '').trim();
+        if (!id) continue;
+        try {
+          const url = await this.evolution.fetchProfilePicUrl({ instanceId: id, jid });
+          if (url) {
+            const value = url.trim();
+            this.profilePicCache.set(cacheKey, { value, expiresAt: now + 10 * 60_000 });
+            return value;
+          }
+          last = url;
+        } catch {
+          continue;
+        }
+      }
+      const value = typeof last === 'string' && last.trim() ? last.trim() : null;
       this.profilePicCache.set(cacheKey, { value, expiresAt: now + 10 * 60_000 });
       return value;
     }
-    const instanceCandidates = await this.resolveInstanceCandidates(userId, opts.instanceId);
+    const instanceCandidates = await this.resolveInstanceCandidates(userId, instanceKeyRaw);
     let last: string | null = null;
     for (const instanceId of instanceCandidates.length ? instanceCandidates : [opts.instanceId ?? '']) {
       const id = String(instanceId ?? '').trim();
@@ -497,7 +514,7 @@ export class EvolutionMessagesService {
     const where: any = {
       userId,
       ...basePhoneWhere,
-      ...(instanceCandidates.length ? { instanceId: { in: instanceCandidates } } : {}),
+      ...(instanceCandidates.length ? { OR: [{ instanceId: { in: instanceCandidates } }, { instanceId: null }] } : {}),
       ...(cursorWhere.length ? { AND: [{ OR: cursorWhere }] } : {})
     };
 
@@ -720,7 +737,9 @@ export class EvolutionMessagesService {
         try {
           const url = await this.getProfilePicUrl(userId, { jid: c.remoteJid, instanceId: opts?.instanceId });
           if (url) c.avatarUrl = url;
-        } catch {}
+        } catch {
+          return;
+        }
       })
     );
     return items;
