@@ -7,7 +7,24 @@ ALTER TABLE "agent_prompt_library"
 CREATE INDEX IF NOT EXISTS "agent_prompt_library_created_by_user_id_idx" ON "agent_prompt_library"("created_by_user_id");
 CREATE INDEX IF NOT EXISTS "agent_prompt_library_user_id_prompt_type_idx" ON "agent_prompt_library"("user_id","prompt_type");
 
-ALTER TABLE "agent_prompt_library"
-  ADD CONSTRAINT "agent_prompt_library_created_by_user_id_fkey"
-  FOREIGN KEY ("created_by_user_id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+UPDATE "agent_prompt_library" l
+SET "created_by_user_id" = NULL
+WHERE l."created_by_user_id" IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM "User" u
+    WHERE u."id" = l."created_by_user_id"
+  );
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'agent_prompt_library_created_by_user_id_fkey'
+  ) THEN
+    ALTER TABLE "agent_prompt_library"
+      ADD CONSTRAINT "agent_prompt_library_created_by_user_id_fkey"
+      FOREIGN KEY ("created_by_user_id") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+  END IF;
+END $$;
