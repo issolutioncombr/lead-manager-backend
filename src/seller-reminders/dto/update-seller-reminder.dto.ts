@@ -15,6 +15,10 @@ export class UpdateSellerReminderDto {
   appointmentId?: string | null;
 
   @IsOptional()
+  @IsString()
+  leadId?: string | null;
+
+  @IsOptional()
   @IsDateString()
   remindAt?: string;
 

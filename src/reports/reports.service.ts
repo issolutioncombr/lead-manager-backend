@@ -212,7 +212,7 @@ export class ReportsService {
           by: ['sellerId', 'appointmentId'],
           where: {
             userId,
-            sellerId: { in: sellerIds },
+          sellerId: { in: sellerIds, not: null },
             appointmentId: { in: appointmentIds }
           },
           _count: { _all: true },

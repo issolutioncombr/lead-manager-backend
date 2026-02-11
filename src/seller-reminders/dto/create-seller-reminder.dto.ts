@@ -13,6 +13,10 @@ export class CreateSellerReminderDto {
   @IsString()
   appointmentId?: string;
 
+  @IsOptional()
+  @IsString()
+  leadId?: string;
+
   @IsDateString()
   remindAt!: string;
 }

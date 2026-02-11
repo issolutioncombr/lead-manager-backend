@@ -7,7 +7,14 @@ export class UpdateSellerCallNoteDto {
 
   @IsOptional()
   @IsString()
+  appointmentId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  leadId?: string | null;
+
+  @IsOptional()
+  @IsString()
   @MinLength(1)
   content?: string;
 }
-

@@ -1,8 +1,13 @@
 import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class CreateSellerCallNoteDto {
+  @IsOptional()
   @IsString()
-  appointmentId!: string;
+  appointmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  leadId?: string;
 
   @IsOptional()
   @IsString()
@@ -12,4 +17,3 @@ export class CreateSellerCallNoteDto {
   @MinLength(1)
   content!: string;
 }
-
