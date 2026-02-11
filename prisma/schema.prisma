@@ -94,7 +94,7 @@ model User {
   sellerCallNotes     SellerCallNote[]
   sellerReminders     SellerReminder[]
   leadStatuses        LeadStatus[]
-  metaAdsIntegration  MetaAdsIntegration?
+  metaAdsIntegrations MetaAdsIntegration[]
 
   @@index([companyId])
 }
@@ -205,12 +205,15 @@ model LeadStatus {
 
 model MetaAdsIntegration {
   id           String   @id @default(cuid())
-  userId       String   @unique @map("user_id")
+  userId       String   @map("user_id")
+  name         String   @default("Padrao")
   enabled      Boolean  @default(false)
   n8nWebhookUrl String? @map("n8n_webhook_url")
   accessToken  String?  @map("access_token")
   pixelId      String?  @map("pixel_id")
   testEventCode String? @map("test_event_code")
+  defaultContentName String? @map("default_content_name")
+  defaultContentCategory String? @map("default_content_category")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -218,6 +221,7 @@ model MetaAdsIntegration {
   events   MetaAdsEvent[]
   mappings MetaAdsStatusMapping[]
 
+  @@index([userId])
   @@map("meta_ads_integrations")
 }
 
@@ -911,6 +915,10 @@ model WhatsappMessage {
 
   // Payload Completo (Segurança)
   rawJson   Json?
+
+  // Dados de contexto HTTP (se disponíveis no webhook)
+  clientIpAddress String? @map("client_ip_address")
+  clientUserAgent String? @db.Text @map("client_user_agent")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

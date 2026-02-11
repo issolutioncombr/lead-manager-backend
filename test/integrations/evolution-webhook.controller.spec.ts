@@ -3,6 +3,10 @@ import { EvolutionWebhookController } from '../../src/integrations/evolution-web
 
 describe('EvolutionWebhookController', () => {
   const originalEnv = process.env;
+  const reqMock = {
+    headers: { 'user-agent': 'jest', 'x-forwarded-for': '203.0.113.10' },
+    ip: '203.0.113.10'
+  } as any;
 
   beforeEach(() => {
     process.env = { ...originalEnv };
@@ -22,9 +26,9 @@ describe('EvolutionWebhookController', () => {
     const controller = new EvolutionWebhookController(svc as any);
 
     for (let i = 0; i < 10_000; i += 1) {
-      await controller.handleWebhook('secret', {});
+      await controller.handleWebhook(reqMock, 'secret', {});
     }
-    await expect(controller.handleWebhook('secret', {})).rejects.toMatchObject({ status: 429 });
+    await expect(controller.handleWebhook(reqMock, 'secret', {})).rejects.toMatchObject({ status: 429 });
   });
 
   afterAll(() => {
@@ -44,7 +48,7 @@ describe('EvolutionWebhookController', () => {
     };
     const controller = new EvolutionWebhookController(svc as any);
 
-    await expect(controller.handleWebhook('wrong', {})).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(controller.handleWebhook(reqMock, 'wrong', {})).rejects.toBeInstanceOf(UnauthorizedException);
     await expect(controller.handleMessagesUpdate(undefined, {})).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
@@ -61,7 +65,7 @@ describe('EvolutionWebhookController', () => {
     };
     const controller = new EvolutionWebhookController(svc as any);
 
-    const res = await controller.handleWebhook('secret', { body: { event: 'messages.upsert' } });
+    const res = await controller.handleWebhook(reqMock, 'secret', { body: { event: 'messages.upsert' } });
     expect(res).toEqual({ status: 'received' });
     expect(svc.handleWebhook).toHaveBeenCalledTimes(1);
   });

@@ -116,7 +116,8 @@ export class AppointmentsService {
         {
           stage: dto.leadStage,
           purchaseValue: dto.purchaseValue,
-          purchaseContentName: dto.purchaseContentName
+          purchaseContentName: dto.purchaseContentName,
+          metaAdsIntegrationId: dto.metaAdsIntegrationId
         },
         { relatedAppointment: updatedAppointment }
       );

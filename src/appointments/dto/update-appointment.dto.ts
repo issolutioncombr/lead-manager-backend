@@ -17,4 +17,8 @@ export class UpdateAppointmentDto extends PartialType(CreateAppointmentDto) {
   @IsOptional()
   @IsString()
   purchaseContentName?: string;
+
+  @IsOptional()
+  @IsString()
+  metaAdsIntegrationId?: string;
 }

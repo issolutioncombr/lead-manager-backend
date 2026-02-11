@@ -3,6 +3,10 @@ import { IsBoolean, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateMetaAdsConfigDto {
   @IsOptional()
+  @IsString()
+  name?: string;
+
+  @IsOptional()
   @IsBoolean()
   enabled?: boolean;
 
@@ -21,7 +25,51 @@ export class UpdateMetaAdsConfigDto {
   @IsOptional()
   @IsString()
   testEventCode?: string | null;
+
+  @IsOptional()
+  @IsString()
+  defaultContentName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  defaultContentCategory?: string | null;
 }
+
+export class CreateMetaAdsIntegrationDto {
+  @IsString()
+  @MinLength(1)
+  name!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+
+  @IsOptional()
+  @IsString()
+  n8nWebhookUrl?: string | null;
+
+  @IsOptional()
+  @IsString()
+  accessToken?: string | null;
+
+  @IsOptional()
+  @IsString()
+  pixelId?: string | null;
+
+  @IsOptional()
+  @IsString()
+  testEventCode?: string | null;
+
+  @IsOptional()
+  @IsString()
+  defaultContentName?: string | null;
+
+  @IsOptional()
+  @IsString()
+  defaultContentCategory?: string | null;
+}
+
+export class UpdateMetaAdsIntegrationDto extends UpdateMetaAdsConfigDto {}
 
 export class CreateMetaAdsEventDto {
   @IsString()
@@ -58,4 +106,3 @@ export class UpsertMetaAdsMappingDto {
   @IsBoolean()
   enabled?: boolean;
 }
-

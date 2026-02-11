@@ -13,4 +13,8 @@ export class UpdateLeadDto extends PartialType(CreateLeadDto) {
   @IsOptional()
   @IsString()
   purchaseContentName?: string;
+
+  @IsOptional()
+  @IsString()
+  metaAdsIntegrationId?: string;
 }

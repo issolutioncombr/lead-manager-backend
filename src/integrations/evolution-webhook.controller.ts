@@ -1,4 +1,5 @@
-import { Body, Controller, Headers, HttpCode, HttpException, HttpStatus, Logger, Post, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Headers, HttpCode, HttpException, HttpStatus, Logger, Post, Req, UnauthorizedException } from '@nestjs/common';
+import type { Request } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { EvolutionWebhookService } from './evolution-webhook.service';
 
@@ -38,11 +39,18 @@ export class EvolutionWebhookController {
   @Public() // Webhook é público (protegido por token se configurado, mas aqui deixaremos aberto ou validaremos no service)
   @Post()
   @HttpCode(HttpStatus.OK)
-  async handleWebhook(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
+  async handleWebhook(
+    @Req() req: Request,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
     this.ensureAccess(tokenHeader, payload);
     // Processa assincronamente para não travar a Evolution
     // Em produção, idealmente usaria uma fila (BullMQ)
-    this.webhookService.handleWebhook(payload).catch((err) => {
+    const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+    const forwarded = typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'] : null;
+    const clientIpAddress = forwarded?.split(',')[0]?.trim() || (req.ip ? String(req.ip) : null);
+    this.webhookService.handleWebhook(payload, { clientIpAddress, clientUserAgent: userAgent }).catch((err) => {
       this.logger.error('Erro no processamento do webhook em background', err?.stack ?? String(err));
     });
 
@@ -63,9 +71,16 @@ export class EvolutionWebhookController {
   @Public()
   @Post('messages-upsert')
   @HttpCode(HttpStatus.OK)
-  async handleMessagesUpsert(@Headers('x-evolution-webhook-token') tokenHeader: string | undefined, @Body() payload: any) {
+  async handleMessagesUpsert(
+    @Req() req: Request,
+    @Headers('x-evolution-webhook-token') tokenHeader: string | undefined,
+    @Body() payload: any
+  ) {
     this.ensureAccess(tokenHeader, payload);
-    this.webhookService.handleWebhook(payload).catch(() => {
+    const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'] : null;
+    const forwarded = typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'] : null;
+    const clientIpAddress = forwarded?.split(',')[0]?.trim() || (req.ip ? String(req.ip) : null);
+    this.webhookService.handleWebhook(payload, { clientIpAddress, clientUserAgent: userAgent }).catch(() => {
       this.logger.warn('Falha ao processar messages-upsert');
     });
     return { status: 'received' };

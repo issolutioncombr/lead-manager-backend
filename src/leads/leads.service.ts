@@ -341,6 +341,7 @@ export class LeadsService {
         userId,
         lead: updatedLead,
         appointment: options?.relatedAppointment ?? null,
+        metaAdsIntegrationId: dto.metaAdsIntegrationId,
         purchase: {
           value: dto.purchaseValue,
           contentName: dto.purchaseContentName

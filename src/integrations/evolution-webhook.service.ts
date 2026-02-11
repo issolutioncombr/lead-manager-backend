@@ -97,7 +97,10 @@ export class EvolutionWebhookService {
     }
   }
 
-  async handleWebhook(payload: any) {
+  async handleWebhook(
+    payload: any,
+    context?: { clientIpAddress?: string | null; clientUserAgent?: string | null }
+  ) {
     // 1. Validar se é um evento de mensagem
     const eventRaw = (payload?.event ?? payload?.eventType ?? '').toString();
     const normalizedEvent = eventRaw.toLowerCase().replace(/_/g, '.');
@@ -296,6 +299,8 @@ export class EvolutionWebhookService {
           conversation: conversationText ?? null,
           caption: mediaCaption,
           mediaUrl,
+          clientIpAddress: context?.clientIpAddress ?? null,
+          clientUserAgent: context?.clientUserAgent ?? null,
           rawJson: this.redactSecrets(payload)
         },
         update: {
@@ -308,6 +313,8 @@ export class EvolutionWebhookService {
           caption: mediaCaption,
           mediaUrl,
           status: data?.status ?? null,
+          ...(context?.clientIpAddress ? { clientIpAddress: context.clientIpAddress } : {}),
+          ...(context?.clientUserAgent ? { clientUserAgent: context.clientUserAgent } : {}),
           rawJson: this.redactSecrets(payload)
         }
       });
@@ -878,7 +885,7 @@ export class EvolutionWebhookService {
     const raw = (payload?.event ?? '').toString();
     const normalized = raw.toLowerCase().replace(/_/g, '.').replace(/-/g, '.');
     if (normalized === 'messages.upsert') {
-      return this.handleWebhook(payload);
+      return this.handleWebhook(payload, undefined);
     }
     if (normalized === 'connection.update') {
       return this.handleConnectionUpdate(payload);
