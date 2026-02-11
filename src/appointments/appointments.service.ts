@@ -1,4 +1,4 @@
-﻿import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Appointment, AppointmentStatus, Prisma } from '@prisma/client';
 
 import { LeadsService } from '../leads/leads.service';
@@ -7,20 +7,49 @@ import { AppointmentsRepository, PaginatedAppointments } from './appointments.re
 import { CreateAppointmentDto } from './dto/create-appointment.dto';
 import { ListAppointmentsDto } from './dto/list-appointments.dto';
 import { UpdateAppointmentDto } from './dto/update-appointment.dto';
+import { SellerVideoCallAccessService } from '../sellers/seller-video-call-access.service';
+
+type AuthenticatedActor = {
+  userId: string;
+  sellerId?: string;
+};
 
 @Injectable()
 export class AppointmentsService {
   constructor(
     private readonly appointmentsRepository: AppointmentsRepository,
-    private readonly leadsService: LeadsService
+    private readonly leadsService: LeadsService,
+    private readonly access: SellerVideoCallAccessService
   ) {}
 
-  list(userId: string, query: ListAppointmentsDto): Promise<PaginatedAppointments> {
-    return this.appointmentsRepository.findMany(userId, query);
+  async list(actor: AuthenticatedActor, query: ListAppointmentsDto): Promise<PaginatedAppointments> {
+    if (actor.sellerId) {
+      const scope = await this.access.requireActiveLeadScope(actor.userId, actor.sellerId);
+      return this.appointmentsRepository.findMany(actor.userId, {
+        ...query,
+        ...(scope.appointmentId ? { appointmentId: scope.appointmentId } : { leadId: scope.leadId })
+      });
+    }
+
+    return this.appointmentsRepository.findMany(actor.userId, query);
   }
 
-  async findById(userId: string, id: string) {
-    const appointment = await this.appointmentsRepository.findById(userId, id);
+  async findById(actor: AuthenticatedActor, id: string) {
+    if (actor.sellerId) {
+      const scope = await this.access.requireActiveLeadScope(actor.userId, actor.sellerId);
+      const appointment = await this.appointmentsRepository.findById(actor.userId, id);
+      if (!appointment) {
+        throw new NotFoundException('Consulta nao encontrada');
+      }
+      if (scope.appointmentId) {
+        if (appointment.id !== scope.appointmentId) throw new ForbiddenException('Acesso negado');
+      } else {
+        if (appointment.leadId !== scope.leadId) throw new ForbiddenException('Acesso negado');
+      }
+      return appointment;
+    }
+
+    const appointment = await this.appointmentsRepository.findById(actor.userId, id);
 
     if (!appointment) {
       throw new NotFoundException('Consulta nao encontrada');
@@ -29,12 +58,13 @@ export class AppointmentsService {
     return appointment;
   }
 
-  async create(userId: string, dto: CreateAppointmentDto): Promise<Appointment> {
-    await this.leadsService.findById(userId, dto.leadId);
+  async create(actor: AuthenticatedActor, dto: CreateAppointmentDto): Promise<Appointment> {
+    this.access.ensureCompanyUser(actor);
+    await this.leadsService.findById(actor.userId, dto.leadId);
     const status = dto.status ?? AppointmentStatus.AGENDADA;
     const start = parseDateInput(dto.start);
     const end = parseDateInput(dto.end);
-    const appointment = await this.appointmentsRepository.create(userId, {
+    const appointment = await this.appointmentsRepository.create(actor.userId, {
       leadId: dto.leadId,
       start,
       end,
@@ -46,11 +76,12 @@ export class AppointmentsService {
     return appointment;
   }
 
-  async update(userId: string, id: string, dto: UpdateAppointmentDto): Promise<Appointment> {
-    const appointment = await this.findById(userId, id);
+  async update(actor: AuthenticatedActor, id: string, dto: UpdateAppointmentDto): Promise<Appointment> {
+    this.access.ensureCompanyUser(actor);
+    const appointment = await this.findById(actor, id);
     const status = dto.status ?? appointment.status;
     if (dto.leadId) {
-      await this.leadsService.findById(userId, dto.leadId);
+      await this.leadsService.findById(actor.userId, dto.leadId);
     }
 
     const data: Prisma.AppointmentUpdateInput = {
@@ -70,7 +101,7 @@ export class AppointmentsService {
     if (dto.leadStage) {
       const targetLeadId = dto.leadId ?? appointment.leadId;
       await this.leadsService.update(
-        userId,
+        actor.userId,
         targetLeadId,
         { stage: dto.leadStage },
         { relatedAppointment: updatedAppointment }
@@ -80,8 +111,9 @@ export class AppointmentsService {
     return updatedAppointment;
   }
 
-  async delete(userId: string, id: string): Promise<Appointment> {
-    await this.findById(userId, id);
+  async delete(actor: AuthenticatedActor, id: string): Promise<Appointment> {
+    this.access.ensureCompanyUser(actor);
+    await this.findById(actor, id);
     return this.appointmentsRepository.delete(id);
   }
 }

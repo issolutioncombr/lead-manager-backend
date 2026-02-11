@@ -1,4 +1,4 @@
-﻿import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AppointmentsService } from './appointments.service';
@@ -10,6 +10,7 @@ import { ListAppointmentsDto } from './dto/list-appointments.dto';
 type AuthenticatedUser = {
   userId: string;
   email: string;
+  sellerId?: string;
 };
 
 @Controller('appointments')
@@ -18,17 +19,17 @@ export class AppointmentsController {
 
   @Get()
   list(@CurrentUser() user: AuthenticatedUser, @Query() query: ListAppointmentsDto): Promise<PaginatedAppointments> {
-    return this.appointmentsService.list(user.userId, query);
+    return this.appointmentsService.list(user, query);
   }
 
   @Get(':id')
   find(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.appointmentsService.findById(user.userId, id);
+    return this.appointmentsService.findById(user, id);
   }
 
   @Post()
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAppointmentDto) {
-    return this.appointmentsService.create(user.userId, dto);
+    return this.appointmentsService.create(user, dto);
   }
 
   @Patch(':id')
@@ -37,11 +38,11 @@ export class AppointmentsController {
     @Param('id') id: string,
     @Body() dto: UpdateAppointmentDto
   ) {
-    return this.appointmentsService.update(user.userId, id, dto);
+    return this.appointmentsService.update(user, id, dto);
   }
 
   @Delete(':id')
   remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.appointmentsService.delete(user.userId, id);
+    return this.appointmentsService.delete(user, id);
   }
 }

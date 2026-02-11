@@ -9,6 +9,8 @@ export interface AppointmentQuery extends PaginationQueryDto {
   status?: AppointmentStatus;
   start?: string;
   end?: string;
+  leadId?: string;
+  appointmentId?: string;
 }
 
 export interface PaginatedAppointments {
@@ -42,11 +44,13 @@ export class AppointmentsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findMany(userId: string, query: AppointmentQuery): Promise<PaginatedAppointments> {
-    const { page = 1, limit = 20, status, start, end, search } = query;
+    const { page = 1, limit = 20, status, start, end, search, leadId, appointmentId } = query;
     const parsedStart = start ? parseRangeStart(start) : undefined;
     const parsedEnd = end ? parseRangeEnd(end) : undefined;
     const where: Prisma.AppointmentWhereInput = {
       userId,
+      ...(leadId ? { leadId } : {}),
+      ...(appointmentId ? { id: appointmentId } : {}),
       ...(status ? { status } : {}),
       ...(parsedStart || parsedEnd
         ? {
@@ -66,7 +70,7 @@ export class AppointmentsRepository {
     };
 
     const [data, total] = await Promise.all([
-      this.prisma.appointment.findMany({
+      (this.prisma.appointment.findMany({
         where,
         skip: (page - 1) * limit,
         take: limit,
@@ -88,11 +92,11 @@ export class AppointmentsRepository {
           }
         },
         orderBy: { start: 'desc' }
-      }),
+      } as any) as any),
       this.prisma.appointment.count({ where })
     ]);
 
-    return { data, total, page, limit };
+    return { data, total, page, limit } as PaginatedAppointments;
   }
 
   findById(userId: string, id: string) {
