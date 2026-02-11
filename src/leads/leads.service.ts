@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
 import { Appointment, Lead, LeadStage, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { calculateLeadScore } from '../common/utils/lead-scoring.util';
+import { SellerVideoCallAccessService } from '../sellers/seller-video-call-access.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
 import { LeadsQuery, LeadsRepository, PaginatedLeads } from './leads.repository';
@@ -20,11 +21,30 @@ export class LeadsService {
   constructor(
     private readonly leadsRepository: LeadsRepository,
     private readonly leadStatusWebhookService: LeadStatusWebhookService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly access: SellerVideoCallAccessService
   ) {}
 
   list(userId: string, query: LeadsQuery): Promise<PaginatedLeads> {
     return this.leadsRepository.findMany(userId, query);
+  }
+
+  async listForSeller(userId: string, sellerId: string, _query: LeadsQuery): Promise<PaginatedLeads> {
+    const scope = await this.access.requireActiveLeadScope(userId, sellerId);
+    const lead = await this.leadsRepository.findById(userId, scope.leadId);
+    if (!lead) throw new NotFoundException('Lead nao encontrado');
+    return { data: [lead], total: 1, page: 1, limit: 1 };
+  }
+
+  async findByIdForContext(userId: string, id: string, opts?: { sellerId?: string | null }) {
+    const sellerId = opts?.sellerId ?? null;
+    if (sellerId) {
+      const scope = await this.access.requireActiveLeadScope(userId, sellerId);
+      if (scope.leadId !== id) {
+        throw new ForbiddenException('Acesso negado ao lead');
+      }
+    }
+    return this.findById(userId, id);
   }
 
   async findById(userId: string, id: string) {
@@ -485,6 +505,21 @@ export class LeadsService {
     const tag = query.source ? `_${query.source}` : '';
     const filename = `leads${tag}_${new Date().toISOString().slice(0, 10)}.csv`;
     return { filename, content };
+  }
+
+  async getLeadMessagesForContext(
+    userId: string,
+    leadId: string,
+    options?: { page?: number; limit?: number; textOnly?: boolean },
+    actor?: { sellerId?: string | null }
+  ) {
+    if (actor?.sellerId) {
+      const scope = await this.access.requireActiveLeadScope(userId, actor.sellerId);
+      if (scope.leadId !== leadId) {
+        throw new ForbiddenException('Acesso negado ao lead');
+      }
+    }
+    return this.getLeadMessages(userId, leadId, options);
   }
 
   async getLeadMessages(

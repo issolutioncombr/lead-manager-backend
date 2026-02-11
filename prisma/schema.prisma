@@ -175,6 +175,7 @@ model Lead {
   appointments Appointment[]
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   whatsappMessages WhatsappMessage[]
+  sellerVideoCallAccesses SellerVideoCallAccess[]
 
   @@index([userId])
 }
@@ -192,9 +193,36 @@ model Seller {
   user                  User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   passwordResetTokens   PasswordResetToken[]
   availabilitySlots     SellerAvailability[]
+  videoCallAccesses     SellerVideoCallAccess[]
 
   @@index([userId])
   @@map("sellers")
+}
+
+enum SellerAccessStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+model SellerVideoCallAccess {
+  id            String             @id @default(cuid())
+  sellerId      String             @map("seller_id")
+  leadId        String             @map("lead_id")
+  appointmentId String?            @map("appointment_id")
+  status        SellerAccessStatus @default(ACTIVE)
+  expiresAt     DateTime?          @map("expires_at")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  updatedAt     DateTime           @updatedAt @map("updated_at")
+
+  seller      Seller       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  lead        Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@unique([sellerId, appointmentId])
+  @@index([sellerId, status])
+  @@index([leadId, status])
+  @@map("seller_video_call_access")
 }
 
 model SellerAvailability {
@@ -447,6 +475,7 @@ model Appointment {
   userId        String
   lead          Lead              @relation(fields: [leadId], references: [id], onDelete: Cascade)
   user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sellerVideoCallAccesses SellerVideoCallAccess[]
 
   @@index([leadId])
   @@index([userId])

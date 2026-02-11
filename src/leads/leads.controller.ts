@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -11,6 +11,7 @@ import { LeadsService } from './leads.service';
 type AuthenticatedUser = {
   userId: string;
   email: string;
+  sellerId?: string;
 };
 
 @Controller('leads')
@@ -19,7 +20,9 @@ export class LeadsController {
 
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser, @Query() query: LeadsQueryDto): Promise<any> {
-    const result = await this.leadsService.list(user.userId, query);
+    const result = user.sellerId
+      ? await this.leadsService.listForSeller(user.userId, user.sellerId, query)
+      : await this.leadsService.list(user.userId, query);
     if (query.includeLastMessage) {
       const ids = result.data.map((l) => l.id);
       const latest = await this.leadsService.getLastMessagesForLeads(user.userId, ids);
@@ -36,11 +39,13 @@ export class LeadsController {
 
   @Get('export/events/meta-capi')
   async exportMetaCapi(@CurrentUser() user: AuthenticatedUser) {
+    if (user.sellerId) throw new ForbiddenException('Somente empresas podem acessar esta funcionalidade');
     return this.leadsService.getMetaCapiEvents(user.userId);
   }
 
   @Get('export')
   async export(@CurrentUser() user: AuthenticatedUser, @Query() query: LeadsQueryDto, @Res() res: Response) {
+    if (user.sellerId) throw new ForbiddenException('Somente empresas podem acessar esta funcionalidade');
     const { filename, content } = await this.leadsService.exportCsv(user.userId, query);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -49,7 +54,7 @@ export class LeadsController {
 
   @Get(':id')
   find(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    return this.leadsService.findById(user.userId, id);
+    return this.leadsService.findByIdForContext(user.userId, id, { sellerId: user.sellerId ?? null });
   }
 
   @Get(':id/messages')
@@ -61,11 +66,17 @@ export class LeadsController {
     const page = Math.max(1, Number(query.page ?? 1));
     const limit = Math.max(1, Math.min(200, Number(query.limit ?? 50)));
     const textOnly = (query.textOnly ?? 'false').toLowerCase() === 'true';
-    return this.leadsService.getLeadMessages(user.userId, id, { page, limit, textOnly });
+    return this.leadsService.getLeadMessagesForContext(
+      user.userId,
+      id,
+      { page, limit, textOnly },
+      { sellerId: user.sellerId ?? null }
+    );
   }
 
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateLeadDto | CreateLeadDto[]) {
+    if (user.sellerId) throw new ForbiddenException('Somente empresas podem acessar esta funcionalidade');
     if (Array.isArray(dto)) {
       // Se for um array, processa o primeiro item (ou itera, dependendo da regra de negócio)
       // O N8N pode enviar um array se o nó anterior retornar múltiplos itens e "Split In Batches" não for usado
@@ -78,11 +89,13 @@ export class LeadsController {
 
   @Patch(':id')
   update(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: UpdateLeadDto) {
+    if (user.sellerId) throw new ForbiddenException('Somente empresas podem acessar esta funcionalidade');
     return this.leadsService.update(user.userId, id, dto);
   }
 
   @Delete(':id')
   remove(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    if (user.sellerId) throw new ForbiddenException('Somente empresas podem acessar esta funcionalidade');
     return this.leadsService.delete(user.userId, id);
   }
 }

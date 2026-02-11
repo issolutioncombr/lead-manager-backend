@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Headers, Logger, MessageEvent, Post, Query, Sse } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Headers, Logger, MessageEvent, Post, Query, Sse } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { SellerVideoCallAccessService } from '../sellers/seller-video-call-access.service';
 import { EvolutionMessagesService } from './evolution-messages.service';
 import { EvolutionSendMessageDto } from './dto/evolution-send-message.dto';
 import { EvolutionConversationQueryDto } from './dto/evolution-conversation-query.dto';
@@ -8,14 +9,15 @@ import { EvolutionConversationAgentStatusQueryDto, EvolutionConversationAgentSta
 import { MessageEventsService } from './message-events.service';
 import { catchError, filter, from, interval, map, merge, mergeMap, Observable, of, startWith, throttleTime } from 'rxjs';
 
-type AuthenticatedUser = { userId: string; email: string };
+type AuthenticatedUser = { userId: string; email: string; sellerId?: string };
 
 @Controller('integrations/evolution/messages')
 export class EvolutionMessagesController {
   private readonly logger = new Logger(EvolutionMessagesController.name);
   constructor(
     private readonly svc: EvolutionMessagesService,
-    private readonly events: MessageEventsService
+    private readonly events: MessageEventsService,
+    private readonly access: SellerVideoCallAccessService
   ) {}
 
   private maskPhone(value: string | undefined | null) {
@@ -23,10 +25,22 @@ export class EvolutionMessagesController {
     return digits.length >= 4 ? `${digits.slice(0, 2)}*****${digits.slice(-2)}` : 'invalid';
   }
 
+  private async resolveSellerPhone(user: AuthenticatedUser): Promise<string | null> {
+    if (!user.sellerId) return null;
+    const scoped = await this.access.getScopedLeadSummaryForSeller(user.userId, user.sellerId);
+    const phone = String(scoped.lead?.contact ?? '').replace(/\D+/g, '');
+    if (!phone || phone.length < 7) {
+      throw new ForbiddenException('Lead vinculado não possui telefone válido');
+    }
+    return phone;
+  }
+
   @Post('send')
   async send(@CurrentUser() user: AuthenticatedUser, @Body() dto: EvolutionSendMessageDto) {
+    const sellerPhone = await this.resolveSellerPhone(user);
+    const phone = sellerPhone ? `+${sellerPhone}` : dto.phone;
     return this.svc.sendMessage(user.userId, {
-      phone: dto.phone,
+      phone,
       text: dto.text,
       mediaUrl: dto.mediaUrl,
       caption: dto.caption,
@@ -41,16 +55,18 @@ export class EvolutionMessagesController {
     @Headers('x-request-id') requestId: string | undefined,
     @Query() query: EvolutionConversationQueryDto
   ) {
+    const sellerPhone = await this.resolveSellerPhone(user);
+    const phone = sellerPhone ? `+${sellerPhone}` : query.phone;
     this.logger.log(
-      `conversation userId=${user.userId} phone=${this.maskPhone(query.phone)} instanceId=${query.instanceId ?? 'auto'} source=${query.source ?? '-'} requestId=${requestId ?? '-'}`
+      `conversation userId=${user.userId} phone=${this.maskPhone(phone)} instanceId=${query.instanceId ?? 'auto'} source=${query.source ?? '-'} requestId=${requestId ?? '-'}`
     );
-    return this.svc.listConversation(user.userId, query.phone, {
+    return this.svc.listConversation(user.userId, phone, {
       direction: query.direction,
       page: query.page,
       limit: query.limit,
       instanceId: query.instanceId,
-      remoteJid: query.remoteJid,
-      source: query.source,
+      remoteJid: sellerPhone ? undefined : query.remoteJid,
+      source: sellerPhone ? 'local' : query.source,
       beforeTimestamp: query.beforeTimestamp,
       beforeUpdatedAt: query.beforeUpdatedAt,
       cursor: query.cursor
@@ -65,6 +81,28 @@ export class EvolutionMessagesController {
     @Query('limit') limit?: string,
     @Query('source') source?: 'provider' | 'local'
   ) {
+    if (user.sellerId) {
+      const scoped = await this.access.getScopedLeadSummaryForSeller(user.userId, user.sellerId);
+      const phone = String(scoped.lead?.contact ?? '').replace(/\D+/g, '');
+      const masked = this.maskPhone(phone);
+      this.logger.log(`chats(seller) userId=${user.userId} phone=${masked} requestId=${requestId ?? '-'}`);
+      const conversation = phone
+        ? await this.svc.listConversation(user.userId, `+${phone}`, { limit: 1, source: 'local' })
+        : { data: [] };
+      const last = Array.isArray((conversation as any)?.data) && (conversation as any).data.length ? (conversation as any).data[(conversation as any).data.length - 1] : null;
+      const item = phone
+        ? {
+            id: phone,
+            contact: phone,
+            name: scoped.lead?.name ?? null,
+            remoteJid: `${phone}@s.whatsapp.net`,
+            lastMessage: last
+              ? { text: last.mediaUrl ? (last.caption || 'Anexo') : (last.conversation || 'Mensagem'), timestamp: last.timestamp, fromMe: !!last.fromMe }
+              : null
+          }
+        : null;
+      return { data: item ? [item] : [] };
+    }
     this.logger.log(
       `chats userId=${user.userId} instanceId=${instanceId ?? 'auto'} source=${source ?? '-'} requestId=${requestId ?? '-'}`
     );
@@ -80,6 +118,13 @@ export class EvolutionMessagesController {
     @Query('phone') phone?: string,
     @Query('instanceId') instanceId?: string
   ) {
+    if (user.sellerId) {
+      const sellerPhone = await this.resolveSellerPhone(user);
+      if (sellerPhone) {
+        jid = `${sellerPhone}@s.whatsapp.net`;
+        phone = sellerPhone;
+      }
+    }
     const inferredPhone = phone ?? (jid ? jid.split('@')[0] : null);
     this.logger.log(
       `profile-pic userId=${user.userId} phone=${this.maskPhone(inferredPhone)} instanceId=${instanceId ?? 'auto'} requestId=${requestId ?? '-'}`
@@ -90,6 +135,12 @@ export class EvolutionMessagesController {
 
   @Get('agent-status')
   async getAgentStatus(@CurrentUser() user: AuthenticatedUser, @Query() query: EvolutionConversationAgentStatusQueryDto) {
+    if (user.sellerId) {
+      const sellerPhone = await this.resolveSellerPhone(user);
+      if (sellerPhone && String(query.contact_number ?? '').replace(/\D+/g, '') !== sellerPhone) {
+        query.contact_number = sellerPhone;
+      }
+    }
     const status = await this.svc.getConversationAgentStatus(user.userId, {
       instanceNumber: query.instance_number,
       contactNumber: query.contact_number
@@ -99,6 +150,12 @@ export class EvolutionMessagesController {
 
   @Post('agent-status')
   async setAgentStatus(@CurrentUser() user: AuthenticatedUser, @Body() dto: EvolutionConversationAgentStatusSetDto) {
+    if (user.sellerId) {
+      const sellerPhone = await this.resolveSellerPhone(user);
+      if (sellerPhone && String(dto.contact_number ?? '').replace(/\D+/g, '') !== sellerPhone) {
+        dto.contact_number = sellerPhone;
+      }
+    }
     const value = dto.value ?? 'ATIVO';
     return this.svc.setConversationAgentStatus(user.userId, {
       instanceNumber: dto.instance_number,
@@ -113,12 +170,14 @@ export class EvolutionMessagesController {
     @Headers('x-request-id') requestId: string | undefined,
     @Query() query: EvolutionUpdatesQueryDto
   ) {
+    const sellerPhone = await this.resolveSellerPhone(user);
+    const phone = sellerPhone ? `+${sellerPhone}` : query.phone;
     this.logger.log(
-      `updates userId=${user.userId} phone=${this.maskPhone(query.phone)} instanceId=${query.instanceId ?? 'auto'} source=${query.source ?? '-'} requestId=${requestId ?? '-'}`
+      `updates userId=${user.userId} phone=${this.maskPhone(phone)} instanceId=${query.instanceId ?? 'auto'} source=${query.source ?? '-'} requestId=${requestId ?? '-'}`
     );
-    return this.svc.listUpdates(user.userId, query.phone, {
+    return this.svc.listUpdates(user.userId, phone, {
       instanceId: query.instanceId,
-      source: query.source,
+      source: sellerPhone ? 'local' : query.source,
       limit: query.limit,
       afterTimestamp: query.afterTimestamp,
       afterUpdatedAt: query.afterUpdatedAt
@@ -126,12 +185,13 @@ export class EvolutionMessagesController {
   }
 
   @Sse('stream')
-  stream(
+  async stream(
     @CurrentUser() user: AuthenticatedUser,
     @Headers('x-request-id') requestId: string | undefined,
     @Query() query: EvolutionUpdatesQueryDto
-  ): Observable<MessageEvent> {
-    const digits = String(query.phone ?? '').replace(/\D+/g, '');
+  ): Promise<Observable<MessageEvent>> {
+    const sellerPhone = await this.resolveSellerPhone(user);
+    const digits = String(sellerPhone ? `+${sellerPhone}` : query.phone ?? '').replace(/\D+/g, '');
     const masked = digits.length >= 4 ? `${digits.slice(0, 2)}*****${digits.slice(-2)}` : 'invalid';
     this.logger.log(`stream start userId=${user.userId} phone=${masked} requestId=${requestId ?? '-'}`);
     let cursor = {
