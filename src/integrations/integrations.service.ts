@@ -1,5 +1,5 @@
-﻿import { Injectable } from '@nestjs/common';
-import { ClientStatus, LeadStage } from '@prisma/client';
+import { Injectable } from '@nestjs/common';
+import { ClientStatus } from '@prisma/client';
 
 import { ClientsService } from '../clients/clients.service';
 import { LeadsService } from '../leads/leads.service';
@@ -71,7 +71,7 @@ export class IntegrationsService {
       contact: payload.phone ?? client.phone ?? undefined,
       source: payload.source ?? 'WhatsApp',
       notes: payload.notes,
-      stage: payload.stage ?? LeadStage.NOVO
+      stage: payload.stage ?? 'NOVO'
     });
 
     const previousTreatmentValue = this.normalizeBoolean(
@@ -129,5 +129,4 @@ export class IntegrationsService {
     return null;
   }
 }
-
 

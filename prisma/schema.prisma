@@ -93,6 +93,8 @@ model User {
   botButtons          BotButton[]
   sellerCallNotes     SellerCallNote[]
   sellerReminders     SellerReminder[]
+  leadStatuses        LeadStatus[]
+  metaAdsIntegration  MetaAdsIntegration?
 
   @@index([companyId])
 }
@@ -167,7 +169,7 @@ model Lead {
   source       String?
   notes        String?
   score        Int           @default(0)
-  stage        LeadStage     @default(NOVO)
+  stage        String        @default("NOVO")
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
   contact      String?
@@ -182,6 +184,75 @@ model Lead {
   sellerReminders SellerReminder[]
 
   @@index([userId])
+}
+
+model LeadStatus {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  slug      String
+  name      String
+  isSystem  Boolean  @default(false) @map("is_system")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slug])
+  @@index([userId])
+  @@map("lead_statuses")
+}
+
+model MetaAdsIntegration {
+  id           String   @id @default(cuid())
+  userId       String   @unique @map("user_id")
+  enabled      Boolean  @default(false)
+  n8nWebhookUrl String? @map("n8n_webhook_url")
+  accessToken  String?  @map("access_token")
+  pixelId      String?  @map("pixel_id")
+  testEventCode String? @map("test_event_code")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user     User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events   MetaAdsEvent[]
+  mappings MetaAdsStatusMapping[]
+
+  @@map("meta_ads_integrations")
+}
+
+model MetaAdsEvent {
+  id            String   @id @default(cuid())
+  integrationId String   @map("integration_id")
+  name          String
+  metaEventName String   @map("meta_event_name")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  integration MetaAdsIntegration     @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  mappings    MetaAdsStatusMapping[]
+
+  @@unique([integrationId, metaEventName])
+  @@index([integrationId])
+  @@map("meta_ads_events")
+}
+
+model MetaAdsStatusMapping {
+  id            String   @id @default(cuid())
+  integrationId String   @map("integration_id")
+  statusSlug    String   @map("status_slug")
+  eventId       String   @map("event_id")
+  enabled       Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  integration MetaAdsIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  event       MetaAdsEvent       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([integrationId, statusSlug])
+  @@index([integrationId])
+  @@index([eventId])
+  @@map("meta_ads_status_mappings")
 }
 
 model Seller {
@@ -705,14 +776,6 @@ enum ClientStatus {
   INACTIVE
   VIP
   LOST
-}
-
-enum LeadStage {
-  NOVO         @map("Novo")
-  AGENDOU_CALL @map("Agendou uma call")
-  ENTROU_CALL  @map("Entrou na call")
-  COMPROU      @map("Comprou")
-  NO_SHOW      @map("Não compareceu")
 }
 
 enum AppointmentStatus {

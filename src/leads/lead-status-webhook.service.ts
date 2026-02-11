@@ -1,10 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Appointment, AppointmentStatus, Lead, LeadStage } from '@prisma/client';
+import { Appointment, AppointmentStatus, Lead } from '@prisma/client';
 import dayjs from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 
 import { PrismaService } from '../prisma/prisma.service';
+import { leadStageLabelFallback } from '../lead-statuses/lead-statuses.service';
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -12,7 +13,7 @@ dayjs.extend(timezone);
 interface LeadStageWebhookParams {
   userId: string;
   lead: Lead;
-  newStage: LeadStage;
+  newStage: string;
   appointment?: Appointment | null;
 }
 
@@ -87,6 +88,9 @@ export class LeadStatusWebhookService {
       contact = temp;
     }
 
+    const stageSlug = String(params.newStage).trim().toUpperCase();
+    const leadStatusLabel = await this.resolveLeadStageLabel(params.userId, stageSlug);
+
     const payload = {
       user_id: params.userId,
       user_api_key: user?.apiKey ?? null,
@@ -97,8 +101,8 @@ export class LeadStatusWebhookService {
       lead_source: params.lead.source ?? null,
       lead_notes: params.lead.notes ?? null,
       lead_score: params.lead.score ?? 0,
-      lead_stage: params.newStage,
-      lead_status: this.formatLeadStageLabel(params.newStage),
+      lead_stage: stageSlug,
+      lead_status: leadStatusLabel,
       call_link: appointment?.meetLink ?? null,
       call_inicio: appointment ? this.formatDate(appointment.start) : null,
       call_fim: appointment ? this.formatDate(appointment.end) : null,
@@ -138,26 +142,9 @@ export class LeadStatusWebhookService {
     }
   }
 
-  private getMetaEventName(stage: LeadStage): string {
-    switch (stage) {
-      case 'NOVO': return 'Lead';
-      case 'AGENDOU_CALL': return 'Schedule';
-      case 'ENTROU_CALL': return 'QualifiedLead';
-      case 'COMPROU': return 'Purchase';
-      case 'NO_SHOW': return 'NoShow';
-      default: return 'Lead';
-    }
-  }
-
-  private formatLeadStageLabel(stage: LeadStage): string {
-    const labels: Record<LeadStage, string> = {
-      NOVO: 'Novo',
-      AGENDOU_CALL: 'Agendou uma call',
-      ENTROU_CALL: 'Entrou na call',
-      COMPROU: 'Comprou',
-      NO_SHOW: 'Nao compareceu'
-    };
-    return labels[stage] ?? stage;
+  private async resolveLeadStageLabel(userId: string, slug: string) {
+    const status = await (this.prisma as any).leadStatus.findUnique({ where: { userId_slug: { userId, slug } } });
+    return status?.name ?? leadStageLabelFallback(slug);
   }
 
   private formatCallStatus(status: AppointmentStatus): string {

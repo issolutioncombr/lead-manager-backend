@@ -1,10 +1,10 @@
-﻿import { ClientStatus, LeadStage } from '@prisma/client';
+import { ClientStatus } from '@prisma/client';
 
 interface ScoreInput {
   source?: string | null;
   tags?: string[];
   status?: ClientStatus;
-  stage?: LeadStage;
+  stage?: string;
 }
 
 const SOURCE_SCORES: Record<string, number> = {
@@ -80,13 +80,13 @@ export const calculateLeadScore = (input: ScoreInput): number => {
   }
 
   switch (input.stage) {
-    case LeadStage.AGENDOU_CALL:
+    case 'AGENDOU_CALL':
       score += 40;
       break;
-    case LeadStage.ENTROU_CALL:
+    case 'ENTROU_CALL':
       score += 60;
       break;
-    case LeadStage.COMPROU:
+    case 'COMPROU':
       score += 80;
       break;
     default:

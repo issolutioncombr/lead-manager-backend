@@ -1,5 +1,4 @@
-import { LeadStage } from '@prisma/client';
-import { IsEnum, IsOptional, IsString, IsBoolean, IsNumber, IsObject } from 'class-validator';
+import { IsOptional, IsString, IsBoolean, IsNumber, IsObject } from 'class-validator';
 
 export class CreateLeadDto {
   @IsOptional()
@@ -23,8 +22,8 @@ export class CreateLeadDto {
   notes?: string;
 
   @IsOptional()
-  @IsEnum(LeadStage)
-  stage?: LeadStage;
+  @IsString()
+  stage?: string;
 
   // --- Campos Opcionais para WhatsappMessage e Atribuição Meta CAPI ---
 

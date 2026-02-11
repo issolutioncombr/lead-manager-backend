@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Appointment, AppointmentStatus, LeadStage, Prisma } from '@prisma/client';
+import { Appointment, AppointmentStatus, Prisma } from '@prisma/client';
 
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { parseRangeEnd, parseRangeStart } from '../common/utils/date.util';
@@ -20,7 +20,7 @@ export interface PaginatedAppointments {
       name: string | null;
       email: string | null;
       contact: string | null;
-      stage: LeadStage | null;
+      stage: string | null;
     };
     sellerVideoCallAccesses: Array<{
       id: string;

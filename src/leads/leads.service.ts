@@ -1,9 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException, Logger, ConflictException } from '@nestjs/common';
-import { Appointment, Lead, LeadStage, Prisma } from '@prisma/client';
+import { Appointment, Lead, Prisma } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 import { calculateLeadScore } from '../common/utils/lead-scoring.util';
+import { LeadStatusesService } from '../lead-statuses/lead-statuses.service';
+import { MetaAdsService } from '../meta-ads/meta-ads.service';
 import { SellerVideoCallAccessService } from '../sellers/seller-video-call-access.service';
 import { CreateLeadDto } from './dto/create-lead.dto';
 import { UpdateLeadDto } from './dto/update-lead.dto';
@@ -22,7 +24,9 @@ export class LeadsService {
     private readonly leadsRepository: LeadsRepository,
     private readonly leadStatusWebhookService: LeadStatusWebhookService,
     private readonly prisma: PrismaService,
-    private readonly access: SellerVideoCallAccessService
+    private readonly access: SellerVideoCallAccessService,
+    private readonly leadStatuses: LeadStatusesService,
+    private readonly metaAds: MetaAdsService
   ) {}
 
   list(userId: string, query: LeadsQuery): Promise<PaginatedLeads> {
@@ -76,7 +80,7 @@ export class LeadsService {
       }
     }
 
-    const stage = dto.stage ?? LeadStage.NOVO;
+    const stage = await this.ensureValidLeadStage(userId, dto.stage ?? 'NOVO');
 
     const score = calculateLeadScore({
       source: dto.source,
@@ -94,6 +98,8 @@ export class LeadsService {
     };
 
     const createdLead = await this.leadsRepository.create(userId, data);
+
+    await this.metaAds.dispatchLeadStageChange({ userId, lead: createdLead });
 
     // Lógica robusta para extrair dados do payload (suporta N8N aninhado em rawjson)
     const rawPayload = dto.rawJson || dto.rawjson;
@@ -298,7 +304,7 @@ export class LeadsService {
 
   async update(userId: string, id: string, dto: UpdateLeadDto, options?: UpdateLeadOptions): Promise<Lead> {
     const lead = await this.findById(userId, id);
-    const stage = dto.stage ?? lead.stage;
+    const stage = dto.stage ? await this.ensureValidLeadStage(userId, dto.stage) : lead.stage;
 
     const score = calculateLeadScore({
       source: dto.source ?? lead.source ?? undefined,
@@ -321,17 +327,23 @@ export class LeadsService {
       await this.leadStatusWebhookService.notifyLeadStageChange({
         userId,
         lead: updatedLead,
-        newStage: dto.stage,
+        newStage: stage,
         appointment: options?.relatedAppointment ?? null
       });
 
-      await this.applyLeadStageToWhatsappMessage(userId, updatedLead.id, dto.stage);
+      await this.metaAds.dispatchLeadStageChange({
+        userId,
+        lead: updatedLead,
+        appointment: options?.relatedAppointment ?? null
+      });
+
+      await this.applyLeadStageToWhatsappMessage(userId, updatedLead.id, stage);
     }
 
     return updatedLead;
   }
 
-  private async applyLeadStageToWhatsappMessage(userId: string, leadId: string, newStage: LeadStage) {
+  private async applyLeadStageToWhatsappMessage(userId: string, leadId: string, newStage: string) {
     const whatsappMessage = await (this.prisma as any).whatsappMessage.findFirst({
       where: { userId, OR: [{ leadId }, { externalId: leadId }] },
       orderBy: { timestamp: 'desc' }
@@ -415,7 +427,17 @@ export class LeadsService {
     };
   }
 
-  private getMetaEventName(stage: LeadStage): string {
+  private async ensureValidLeadStage(userId: string, stage: string) {
+    await this.leadStatuses.ensureDefaults(userId);
+    const slug = String(stage).trim().toUpperCase();
+    const status = await (this.prisma as any).leadStatus.findUnique({ where: { userId_slug: { userId, slug } } });
+    if (!status) {
+      throw new ConflictException('Status de lead invalido');
+    }
+    return status.slug;
+  }
+
+  private getMetaEventName(stage: string): string {
     switch (stage) {
       case 'NOVO':
         return 'Lead';
@@ -432,15 +454,9 @@ export class LeadsService {
     }
   }
 
-  private formatLeadStageLabel(stage: LeadStage): string {
-    const labels: Record<LeadStage, string> = {
-      NOVO: 'Novo',
-      AGENDOU_CALL: 'Agendou uma call',
-      ENTROU_CALL: 'Entrou na call',
-      COMPROU: 'Comprou',
-      NO_SHOW: 'Nao compareceu'
-    };
-    return labels[stage] ?? stage;
+  private formatLeadStageLabel(stage: string): string {
+    const s = String(stage).trim().toUpperCase();
+    return s.replace(/_/g, ' ');
   }
 
   async delete(userId: string, id: string): Promise<Lead> {

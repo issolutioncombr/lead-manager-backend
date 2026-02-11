@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { Lead, LeadStage, Prisma } from '@prisma/client';
+import { Lead, Prisma } from '@prisma/client';
 
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface LeadsQuery extends PaginationQueryDto {
-  stage?: LeadStage;
+  stage?: string;
   source?: 'instagram' | 'facebook' | 'indicacao' | 'site' | 'whatsapp';
 }
 

@@ -1,13 +1,12 @@
-import { LeadStage } from '@prisma/client';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsIn, IsOptional, IsString } from 'class-validator';
 
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 export class LeadsQueryDto extends PaginationQueryDto {
   @IsOptional()
-  @IsEnum(LeadStage)
-  stage?: LeadStage;
+  @IsString()
+  stage?: string;
 
   @IsOptional()
   @IsString()

@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import { AppointmentStatus, LeadStage } from '@prisma/client';
+import { AppointmentStatus } from '@prisma/client';
 import dayjs from 'dayjs';
 import customParseFormat from 'dayjs/plugin/customParseFormat';
 import timezone from 'dayjs/plugin/timezone';
@@ -18,7 +18,7 @@ interface DateRange {
 }
 
 type DashboardStageStats = {
-  stage: LeadStage;
+  stage: string;
   count: number;
   percent: number;
 };
@@ -80,15 +80,15 @@ export class ReportsService {
 
   async funnel(userId: string) {
     const qualifiedStages = [
-      LeadStage.AGENDOU_CALL,
-      LeadStage.ENTROU_CALL,
-      LeadStage.COMPROU
+      'AGENDOU_CALL',
+      'ENTROU_CALL',
+      'COMPROU'
     ];
 
     const [leadCount, qualifiedLeadCount, bookedAppointments, completedAppointments] =
       await Promise.all([
         this.prisma.lead.count({ where: { userId } }),
-        this.prisma.lead.count({ where: { userId, stage: { in: qualifiedStages } } }),
+        this.prisma.lead.count({ where: { userId, stage: { in: qualifiedStages as any } } }),
         this.prisma.appointment.count({ where: { userId } }),
         this.prisma.appointment.count({
           where: { userId, status: AppointmentStatus.AGENDADA }
@@ -279,13 +279,7 @@ export class ReportsService {
       return acc;
     }, {});
 
-    const stageOrder: LeadStage[] = [
-      LeadStage.NOVO,
-      LeadStage.AGENDOU_CALL,
-      LeadStage.ENTROU_CALL,
-      LeadStage.COMPROU,
-      LeadStage.NO_SHOW
-    ];
+    const stageOrder: string[] = ['NOVO', 'AGENDOU_CALL', 'ENTROU_CALL', 'COMPROU', 'NO_SHOW'];
 
     const top5Statuses = stageOrder.map((stage) => {
       const count = stageCounts[stage] ?? 0;
@@ -317,12 +311,12 @@ export class ReportsService {
       const total = normalizedSourceCounts[source] ?? 0;
       const stageCountsForSource = sourceStageCounts[source] ?? {};
 
-      const getCount = (stage: LeadStage) => stageCountsForSource[stage] ?? 0;
-      const novo = getCount(LeadStage.NOVO);
-      const agendou = getCount(LeadStage.AGENDOU_CALL);
-      const entrou = getCount(LeadStage.ENTROU_CALL);
-      const comprou = getCount(LeadStage.COMPROU);
-      const noShow = getCount(LeadStage.NO_SHOW);
+      const getCount = (stage: string) => stageCountsForSource[stage] ?? 0;
+      const novo = getCount('NOVO');
+      const agendou = getCount('AGENDOU_CALL');
+      const entrou = getCount('ENTROU_CALL');
+      const comprou = getCount('COMPROU');
+      const noShow = getCount('NO_SHOW');
 
       const reachedAgendou = agendou + entrou + comprou + noShow;
       const reachedEntrou = entrou + comprou;
@@ -395,13 +389,7 @@ export class ReportsService {
     const rangeEnd = dayjs.tz(range.date, 'YYYY-MM-DD', tz).add(1, 'day').startOf('day');
     const rangeStart = dayjs.tz(range.date, 'YYYY-MM-DD', tz).startOf('day').subtract(days - 1, 'day');
 
-    const stageOrder: LeadStage[] = [
-      LeadStage.NOVO,
-      LeadStage.AGENDOU_CALL,
-      LeadStage.ENTROU_CALL,
-      LeadStage.COMPROU,
-      LeadStage.NO_SHOW
-    ];
+    const stageOrder: string[] = ['NOVO', 'AGENDOU_CALL', 'ENTROU_CALL', 'COMPROU', 'NO_SHOW'];
 
     const leads = await this.prisma.lead.findMany({
       where: {

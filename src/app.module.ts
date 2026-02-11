@@ -23,6 +23,8 @@ import { WebhookConfigsModule } from './webhook-configs/webhook-configs.module';
 import { BotButtonsModule } from './bot-buttons/bot-buttons.module';
 import { SellerNotesModule } from './seller-notes/seller-notes.module';
 import { SellerRemindersModule } from './seller-reminders/seller-reminders.module';
+import { LeadStatusesModule } from './lead-statuses/lead-statuses.module';
+import { MetaAdsModule } from './meta-ads/meta-ads.module';
 
 @Module({
   imports: [
@@ -47,7 +49,9 @@ import { SellerRemindersModule } from './seller-reminders/seller-reminders.modul
     ,
     BotButtonsModule,
     SellerNotesModule,
-    SellerRemindersModule
+    SellerRemindersModule,
+    LeadStatusesModule,
+    MetaAdsModule
   ],
   providers: [
     {
