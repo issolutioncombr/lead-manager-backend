@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { assertSuperAdmin } from '../common/super-admin';
@@ -72,27 +72,30 @@ export class AdminController {
     const targetUserId = String(body?.targetUserId ?? '').trim();
     const agentName = String(body?.agentName ?? '').trim();
     const prompt = String(body?.prompt ?? '').trim();
-    if (!targetUserId) {
-      return { error: 'targetUserId é obrigatório' };
-    }
-    if (!agentName) {
-      return { error: 'agentName é obrigatório' };
-    }
-    if (!prompt) {
-      return { error: 'prompt é obrigatório' };
-    }
+    if (!targetUserId) throw new BadRequestException('targetUserId é obrigatório');
+    if (!agentName) throw new BadRequestException('agentName é obrigatório');
+    if (!prompt) throw new BadRequestException('prompt é obrigatório');
 
-    const created = await (this.prisma as any).agentPrompt.create({
-      data: {
-        userId: targetUserId,
-        name: agentName,
-        prompt,
-        active: body?.active !== undefined ? Boolean(body.active) : true,
-        promptType: 'SUPER_ADMIN',
-        createdByUserId: user.userId,
-        version: 1
-      }
-    });
+    const targetUser = await this.prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true } });
+    if (!targetUser?.id) throw new NotFoundException('Usuário destinatário não encontrado');
+
+    let created: any;
+    try {
+      created = await (this.prisma as any).agentPrompt.create({
+        data: {
+          userId: targetUserId,
+          name: agentName,
+          prompt,
+          active: body?.active !== undefined ? Boolean(body.active) : true,
+          promptType: 'SUPER_ADMIN',
+          createdByUserId: user.userId,
+          version: 1
+        }
+      });
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : 'Falha ao criar prompt.';
+      throw new BadRequestException(msg);
+    }
 
     return {
       data: {
@@ -124,27 +127,31 @@ export class AdminController {
     const existing = await (this.prisma as any).agentPrompt.findFirst({
       where: { id: promptId, promptType: 'SUPER_ADMIN', createdByUserId: user.userId }
     });
-    if (!existing) {
-      return { error: 'Prompt não encontrado' };
-    }
+    if (!existing) throw new NotFoundException('Prompt não encontrado');
     const data: any = { version: { increment: 1 } };
     if (body?.agentName !== undefined) {
       const name = String(body.agentName ?? '').trim();
-      if (!name) return { error: 'agentName inválido' };
+      if (!name) throw new BadRequestException('agentName inválido');
       data.name = name;
     }
     if (body?.prompt !== undefined) {
       const prompt = String(body.prompt ?? '').trim();
-      if (!prompt) return { error: 'prompt inválido' };
+      if (!prompt) throw new BadRequestException('prompt inválido');
       data.prompt = prompt;
     }
     if (body?.active !== undefined) {
       data.active = Boolean(body.active);
     }
-    const updated = await (this.prisma as any).agentPrompt.update({
-      where: { id: promptId },
-      data
-    });
+    let updated: any;
+    try {
+      updated = await (this.prisma as any).agentPrompt.update({
+        where: { id: promptId },
+        data
+      });
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : 'Falha ao atualizar prompt.';
+      throw new BadRequestException(msg);
+    }
     return {
       data: {
         id: updated.id,
@@ -168,7 +175,12 @@ export class AdminController {
       select: { id: true }
     });
     if (!existing?.id) return { ok: true };
-    await (this.prisma as any).agentPrompt.delete({ where: { id: promptId } });
+    try {
+      await (this.prisma as any).agentPrompt.delete({ where: { id: promptId } });
+    } catch (e: any) {
+      const msg = typeof e?.message === 'string' ? e.message : 'Falha ao remover prompt.';
+      throw new BadRequestException(msg);
+    }
     return { ok: true };
   }
 }

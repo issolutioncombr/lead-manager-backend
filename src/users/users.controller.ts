@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UsersRepository } from './users.repository';
+import { assertSuperAdmin } from '../common/super-admin';
 
 interface ToggleAdminBody {
   isAdmin: boolean;
@@ -12,26 +13,20 @@ export class UsersController {
   constructor(private readonly prisma: PrismaService, private readonly usersRepo: UsersRepository) {}
 
   @Get()
-  async listAll(@CurrentUser() user: { role?: string; isAdmin?: boolean }) {
-    if (!(user?.isAdmin || user?.role === 'admin')) {
-      return [];
-    }
+  async listAll(@CurrentUser() user: { userId: string }) {
+    await assertSuperAdmin(this.prisma, user.userId);
     return this.usersRepo.findAll();
   }
 
   @Get('pending')
-  async listPending(@CurrentUser() user: { role?: string; isAdmin?: boolean }) {
-    if (!(user?.isAdmin || user?.role === 'admin')) {
-      return [];
-    }
+  async listPending(@CurrentUser() user: { userId: string }) {
+    await assertSuperAdmin(this.prisma, user.userId);
     return this.usersRepo.findPendingApprovals();
   }
 
   @Patch(':id/approve')
-  async approve(@Param('id') id: string, @CurrentUser() user: { role?: string; isAdmin?: boolean }) {
-    if (!(user?.isAdmin || user?.role === 'admin')) {
-      return { id };
-    }
+  async approve(@Param('id') id: string, @CurrentUser() user: { userId: string }) {
+    await assertSuperAdmin(this.prisma, user.userId);
     return this.usersRepo.approveUser(id);
   }
 
@@ -39,11 +34,9 @@ export class UsersController {
   async setAdmin(
     @Param('id') id: string,
     @Body() body: ToggleAdminBody,
-    @CurrentUser() user: { role?: string; isAdmin?: boolean }
+    @CurrentUser() user: { userId: string }
   ) {
-    if (!(user?.isAdmin || user?.role === 'admin')) {
-      return { id, isAdmin: false };
-    }
+    await assertSuperAdmin(this.prisma, user.userId);
     return this.usersRepo.setAdmin(id, body.isAdmin);
   }
 }

@@ -8,6 +8,16 @@ type ManualPromptConfig = {
   serviceParameters?: string;
   faqs?: Array<{ question: string; answer: string }>;
   variables?: Record<string, any>;
+  flowVariables?: {
+    problema_capilar: string;
+    tempo_tentativas: string;
+    periodo: string;
+    dia_confirmado: string;
+    inicio: string;
+    fim: string;
+    nome_completo: string;
+    email: string;
+  };
   scheduling?: {
     timezone?: string;
     windowStart?: string;
@@ -40,6 +50,18 @@ const normalizeConfig = (input: any): ManualPromptConfig => {
       }
     : undefined;
 
+  const flow = input?.flowVariables && typeof input.flowVariables === 'object' ? input.flowVariables : {};
+  const flowVariables = {
+    problema_capilar: String(flow?.problema_capilar ?? '').trim(),
+    tempo_tentativas: String(flow?.tempo_tentativas ?? '').trim(),
+    periodo: String(flow?.periodo ?? '').trim(),
+    dia_confirmado: String(flow?.dia_confirmado ?? '').trim(),
+    inicio: String(flow?.inicio ?? '').trim(),
+    fim: String(flow?.fim ?? '').trim(),
+    nome_completo: String(flow?.nome_completo ?? '').trim(),
+    email: String(flow?.email ?? '').trim()
+  };
+
   return {
     strategy: normalizeText(input?.strategy),
     language: normalizeText(input?.language),
@@ -47,6 +69,7 @@ const normalizeConfig = (input: any): ManualPromptConfig => {
     serviceParameters: normalizeText(input?.serviceParameters),
     faqs: faqs.length ? faqs : undefined,
     variables: input?.variables && typeof input.variables === 'object' ? input.variables : undefined,
+    flowVariables,
     scheduling
   };
 };
@@ -55,6 +78,19 @@ const buildManualPrompt = (agentName: string, config: ManualPromptConfig) => {
   const blocks: string[] = [];
   blocks.push(`# Perfil do agente`);
   blocks.push(`Agente: ${agentName}`);
+
+  if (config.flowVariables) {
+    blocks.push(``);
+    blocks.push(`# Variáveis do fluxo (preenchidas)`);
+    blocks.push(`- problema_capilar: ${config.flowVariables.problema_capilar}`);
+    blocks.push(`- tempo_tentativas: ${config.flowVariables.tempo_tentativas}`);
+    blocks.push(`- periodo: ${config.flowVariables.periodo}`);
+    blocks.push(`- dia_confirmado: ${config.flowVariables.dia_confirmado}`);
+    blocks.push(`- inicio: ${config.flowVariables.inicio}`);
+    blocks.push(`- fim: ${config.flowVariables.fim}`);
+    blocks.push(`- nome_completo: ${config.flowVariables.nome_completo}`);
+    blocks.push(`- email: ${config.flowVariables.email}`);
+  }
 
   if (config.language) {
     blocks.push(``);
@@ -145,6 +181,15 @@ export class ManualPromptsService {
     const agentName = normalizeText(input?.agentName);
     if (!agentName) throw new BadRequestException('agentName é obrigatório');
     const config = normalizeConfig(input);
+    const fv = config.flowVariables;
+    const missing = fv
+      ? Object.entries(fv)
+          .filter(([, v]) => !String(v ?? '').trim())
+          .map(([k]) => k)
+      : ['flowVariables'];
+    if (missing.length) {
+      throw new BadRequestException(`flowVariables incompleto: ${missing.join(', ')}`);
+    }
     const prompt = buildManualPrompt(agentName, config);
     return (this.prisma as any).agentPrompt.create({
       data: {
@@ -171,7 +216,16 @@ export class ManualPromptsService {
 
     const nextName = input?.agentName !== undefined ? normalizeText(input.agentName) : normalizeText(existing.name);
     if (!nextName) throw new BadRequestException('agentName é obrigatório');
-    const config = normalizeConfig({ ...existing.manualConfig, ...input });
+    const config = normalizeConfig({ ...existing.manualConfig, ...input, flowVariables: input?.flowVariables ?? existing.manualConfig?.flowVariables });
+    const fv = config.flowVariables;
+    const missing = fv
+      ? Object.entries(fv)
+          .filter(([, v]) => !String(v ?? '').trim())
+          .map(([k]) => k)
+      : ['flowVariables'];
+    if (missing.length) {
+      throw new BadRequestException(`flowVariables incompleto: ${missing.join(', ')}`);
+    }
     const prompt = buildManualPrompt(nextName, config);
 
     return (this.prisma as any).agentPrompt.update({
@@ -187,4 +241,3 @@ export class ManualPromptsService {
     });
   }
 }
-

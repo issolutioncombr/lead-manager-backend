@@ -460,7 +460,10 @@ export class EvolutionWebhookService {
             : null,
           agent_variables:
             selectedLink?.agentPrompt?.manualConfig && typeof selectedLink.agentPrompt.manualConfig === 'object'
-              ? (selectedLink.agentPrompt.manualConfig as any)?.variables ?? null
+              ? {
+                  ...((selectedLink.agentPrompt.manualConfig as any)?.flowVariables ?? {}),
+                  ...((selectedLink.agentPrompt.manualConfig as any)?.variables ?? {})
+                }
               : null,
           agent_prompt_url: selectedLink?.agentPromptId ? `/n8n/agent-prompts/${selectedLink.agentPromptId}` : null,
           percent,

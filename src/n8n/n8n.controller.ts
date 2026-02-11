@@ -46,10 +46,10 @@ export class N8nController {
     });
     if (!agentPrompt) throw new NotFoundException();
 
-    const variables =
-      agentPrompt.manualConfig && typeof agentPrompt.manualConfig === 'object'
-        ? (agentPrompt.manualConfig as any).variables ?? null
-        : null;
+    const manualConfig = agentPrompt.manualConfig && typeof agentPrompt.manualConfig === 'object' ? (agentPrompt.manualConfig as any) : null;
+    const variables = manualConfig
+      ? { ...(manualConfig.flowVariables ?? {}), ...(manualConfig.variables ?? {}) }
+      : null;
 
     return {
       agent: {
@@ -61,7 +61,7 @@ export class N8nController {
       },
       prompt: agentPrompt.prompt,
       variables,
-      config: agentPrompt.manualConfig ?? null
+      config: manualConfig
     };
   }
 }

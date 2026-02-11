@@ -5,7 +5,7 @@ ALTER TABLE "agent_prompt_library"
   ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 1;
 
 CREATE INDEX IF NOT EXISTS "agent_prompt_library_created_by_user_id_idx" ON "agent_prompt_library"("created_by_user_id");
-CREATE INDEX IF NOT EXISTS "agent_prompt_library_user_id_prompt_type_idx" ON "agent_prompt_library"("user_id","prompt_type");
+CREATE INDEX IF NOT EXISTS "agent_prompt_library_user_id_prompt_type_idx" ON "agent_prompt_library"("userId","prompt_type");
 
 UPDATE "agent_prompt_library" l
 SET "created_by_user_id" = NULL
