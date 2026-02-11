@@ -29,40 +29,6 @@ export class ManualPromptSchedulingDto {
   minLeadTimeMinutes?: string;
 }
 
-export class ManualPromptFlowVariablesDto {
-  @IsString()
-  @MinLength(1)
-  problema_capilar!: string;
-
-  @IsString()
-  @MinLength(1)
-  tempo_tentativas!: string;
-
-  @IsString()
-  @MinLength(1)
-  periodo!: string;
-
-  @IsString()
-  @MinLength(1)
-  dia_confirmado!: string;
-
-  @IsString()
-  @MinLength(1)
-  inicio!: string;
-
-  @IsString()
-  @MinLength(1)
-  fim!: string;
-
-  @IsString()
-  @MinLength(1)
-  nome_completo!: string;
-
-  @IsString()
-  @MinLength(1)
-  email!: string;
-}
-
 export class CreateManualPromptDto {
   @IsString()
   @MinLength(1)
@@ -102,10 +68,6 @@ export class CreateManualPromptDto {
   @ValidateNested()
   @Type(() => ManualPromptSchedulingDto)
   scheduling?: ManualPromptSchedulingDto;
-
-  @ValidateNested()
-  @Type(() => ManualPromptFlowVariablesDto)
-  flowVariables!: ManualPromptFlowVariablesDto;
 }
 
 export class UpdateManualPromptDto {
@@ -147,8 +109,4 @@ export class UpdateManualPromptDto {
   @ValidateNested()
   @Type(() => ManualPromptSchedulingDto)
   scheduling?: ManualPromptSchedulingDto;
-
-  @ValidateNested()
-  @Type(() => ManualPromptFlowVariablesDto)
-  flowVariables!: ManualPromptFlowVariablesDto;
 }

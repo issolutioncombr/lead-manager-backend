@@ -47,9 +47,7 @@ export class N8nController {
     if (!agentPrompt) throw new NotFoundException();
 
     const manualConfig = agentPrompt.manualConfig && typeof agentPrompt.manualConfig === 'object' ? (agentPrompt.manualConfig as any) : null;
-    const variables = manualConfig
-      ? { ...(manualConfig.flowVariables ?? {}), ...(manualConfig.variables ?? {}) }
-      : null;
+    const variables = manualConfig ? manualConfig.variables ?? null : null;
 
     return {
       agent: {
