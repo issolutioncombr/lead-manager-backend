@@ -1,116 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-
-type ManualPromptConfig = {
-  strategy?: string;
-  language?: string;
-  businessRules?: string;
-  serviceParameters?: string;
-  faqs?: Array<{ question: string; answer: string }>;
-  variables?: Record<string, any>;
-  scheduling?: {
-    timezone?: string;
-    windowStart?: string;
-    windowEnd?: string;
-    minLeadTimeMinutes?: string;
-  };
-};
+import { normalizeUserConfig, renderPromptFromCategory } from './manual-prompt-renderer';
 
 const normalizeText = (value?: string | null) => {
   const trimmed = String(value ?? '').trim();
   return trimmed ? trimmed : undefined;
-};
-
-const normalizeConfig = (input: any): ManualPromptConfig => {
-  const faqs = Array.isArray(input?.faqs)
-    ? input.faqs
-        .map((f: any) => ({
-          question: normalizeText(f?.question),
-          answer: normalizeText(f?.answer)
-        }))
-        .filter((f: any) => f.question && f.answer)
-    : [];
-
-  const scheduling = input?.scheduling
-    ? {
-        timezone: normalizeText(input.scheduling.timezone),
-        windowStart: normalizeText(input.scheduling.windowStart),
-        windowEnd: normalizeText(input.scheduling.windowEnd),
-        minLeadTimeMinutes: normalizeText(input.scheduling.minLeadTimeMinutes)
-      }
-    : undefined;
-
-  return {
-    strategy: normalizeText(input?.strategy),
-    language: normalizeText(input?.language),
-    businessRules: normalizeText(input?.businessRules),
-    serviceParameters: normalizeText(input?.serviceParameters),
-    faqs: faqs.length ? faqs : undefined,
-    variables: input?.variables && typeof input.variables === 'object' ? input.variables : undefined,
-    scheduling
-  };
-};
-
-const buildManualPrompt = (agentName: string, config: ManualPromptConfig) => {
-  const blocks: string[] = [];
-  blocks.push(`# Perfil do agente`);
-  blocks.push(`Agente: ${agentName}`);
-
-  if (config.language) {
-    blocks.push(``);
-    blocks.push(`# Linguagem`);
-    blocks.push(config.language);
-  }
-
-  if (config.strategy) {
-    blocks.push(``);
-    blocks.push(`# Estratégia`);
-    blocks.push(config.strategy);
-  }
-
-  if (config.businessRules) {
-    blocks.push(``);
-    blocks.push(`# Regras comerciais`);
-    blocks.push(config.businessRules);
-  }
-
-  if (config.serviceParameters) {
-    blocks.push(``);
-    blocks.push(`# Parâmetros de atendimento`);
-    blocks.push(config.serviceParameters);
-  }
-
-  if (config.scheduling && (config.scheduling.timezone || config.scheduling.windowStart || config.scheduling.windowEnd || config.scheduling.minLeadTimeMinutes)) {
-    blocks.push(``);
-    blocks.push(`# Configurações de agendamento`);
-    if (config.scheduling.timezone) blocks.push(`- Timezone: ${config.scheduling.timezone}`);
-    if (config.scheduling.windowStart) blocks.push(`- Janela início: ${config.scheduling.windowStart}`);
-    if (config.scheduling.windowEnd) blocks.push(`- Janela fim: ${config.scheduling.windowEnd}`);
-    if (config.scheduling.minLeadTimeMinutes) blocks.push(`- Antecedência mínima (min): ${config.scheduling.minLeadTimeMinutes}`);
-  }
-
-  if (Array.isArray(config.faqs) && config.faqs.length) {
-    blocks.push(``);
-    blocks.push(`# FAQ`);
-    config.faqs.forEach((f, idx) => {
-      blocks.push(``);
-      blocks.push(`## ${idx + 1}. ${f.question}`);
-      blocks.push(f.answer);
-    });
-  }
-
-  if (config.variables && Object.keys(config.variables).length) {
-    blocks.push(``);
-    blocks.push(`# Variáveis específicas`);
-    blocks.push(JSON.stringify(config.variables, null, 2));
-  }
-
-  blocks.push(``);
-  blocks.push(`---`);
-  blocks.push(`Este conteúdo é gerado a partir do formulário do sistema e não deve conter regras técnicas internas, ferramentas ou lógica estrutural do fluxo.`);
-  blocks.push(``);
-
-  return blocks.join('\n');
 };
 
 @Injectable()
@@ -121,7 +15,18 @@ export class ManualPromptsService {
     return (this.prisma as any).agentPrompt.findMany({
       where: { userId, promptType: 'USER_MANUAL' },
       orderBy: [{ updatedAt: 'desc' }],
-      select: { id: true, name: true, active: true, promptType: true, version: true, createdAt: true, updatedAt: true, manualConfig: true }
+      select: {
+        id: true,
+        userId: true,
+        promptCategoryId: true,
+        name: true,
+        active: true,
+        promptType: true,
+        version: true,
+        createdAt: true,
+        updatedAt: true,
+        manualConfig: true
+      }
     });
   }
 
@@ -132,29 +37,51 @@ export class ManualPromptsService {
       where: { id: promptId, userId, promptType: 'USER_MANUAL' }
     });
     if (!row) throw new NotFoundException('Prompt não encontrado');
+    const cfg = row.manualConfig && typeof row.manualConfig === 'object' ? (row.manualConfig as any) : {};
+    const categoryId = String(cfg?.categoryId ?? row.promptCategoryId ?? '').trim() || null;
+    const userConfig =
+      (cfg?.version === 3 || cfg?.version === 2) && cfg?.user && typeof cfg.user === 'object'
+        ? cfg.user
+        : {
+            strategy: cfg?.strategy,
+            language: cfg?.language,
+            businessRules: cfg?.businessRules,
+            serviceParameters: cfg?.serviceParameters,
+            faqs: cfg?.faqs
+          };
     return {
       id: row.id,
       agentName: row.name,
       active: row.active,
       version: row.version,
-      config: row.manualConfig ?? {}
+      categoryId,
+      config: userConfig ?? {}
     };
   }
 
   async create(userId: string, input: any) {
     const agentName = normalizeText(input?.agentName);
     if (!agentName) throw new BadRequestException('agentName é obrigatório');
-    const config = normalizeConfig(input);
-    const prompt = buildManualPrompt(agentName, config);
+    const categoryId = String(input?.categoryId ?? '').trim();
+    if (!categoryId) throw new BadRequestException('categoryId é obrigatório');
+    const category = await (this.prisma as any).promptCategory.findFirst({
+      where: { id: categoryId, active: true },
+      select: { id: true, basePrompt: true, adminRules: true, tools: true, requiredVariables: true, variables: true }
+    });
+    if (!category?.id) throw new NotFoundException('Categoria não encontrada');
+    const userConfig = normalizeUserConfig(input);
+    const manualConfig = { version: 3, categoryId: category.id, user: userConfig };
+    const prompt = renderPromptFromCategory(agentName, category, userConfig);
     return (this.prisma as any).agentPrompt.create({
       data: {
         userId,
+        promptCategoryId: category.id,
         name: agentName,
         prompt,
         active: input?.active !== undefined ? Boolean(input.active) : true,
         promptType: 'USER_MANUAL',
         createdByUserId: userId,
-        manualConfig: config,
+        manualConfig,
         version: 1
       },
       select: { id: true, name: true, active: true, promptType: true, version: true, createdAt: true, updatedAt: true }
@@ -171,15 +98,29 @@ export class ManualPromptsService {
 
     const nextName = input?.agentName !== undefined ? normalizeText(input.agentName) : normalizeText(existing.name);
     if (!nextName) throw new BadRequestException('agentName é obrigatório');
-    const config = normalizeConfig({ ...existing.manualConfig, ...input });
-    const prompt = buildManualPrompt(nextName, config);
+    const prevCfg = existing.manualConfig && typeof existing.manualConfig === 'object' ? (existing.manualConfig as any) : {};
+    const categoryId = String(input?.categoryId ?? prevCfg?.categoryId ?? existing.promptCategoryId ?? '').trim();
+    if (!categoryId) throw new BadRequestException('categoryId é obrigatório');
+    const category = await (this.prisma as any).promptCategory.findFirst({
+      where: { id: categoryId, active: true },
+      select: { id: true, basePrompt: true, adminRules: true, tools: true, requiredVariables: true, variables: true }
+    });
+    if (!category?.id) throw new NotFoundException('Categoria não encontrada');
+
+    const mergedUser = normalizeUserConfig({ ...(prevCfg?.user ?? prevCfg ?? {}), ...input });
+    const manualConfig =
+      prevCfg?.version === 2 && prevCfg?.admin
+        ? { ...prevCfg, user: mergedUser, categoryId: category.id, version: 3 }
+        : { version: 3, categoryId: category.id, user: mergedUser };
+    const prompt = renderPromptFromCategory(nextName, category, mergedUser);
 
     return (this.prisma as any).agentPrompt.update({
       where: { id: promptId },
       data: {
         name: nextName,
+        promptCategoryId: category.id,
         ...(input?.active !== undefined ? { active: Boolean(input.active) } : {}),
-        manualConfig: config,
+        manualConfig,
         prompt,
         version: { increment: 1 }
       },

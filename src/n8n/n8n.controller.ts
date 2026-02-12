@@ -1,6 +1,7 @@
 import { Controller, Get, Headers, NotFoundException, Param, Query } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
+import { normalizeUserConfig, renderPromptFromCategory } from '../manual-prompts/manual-prompt-renderer';
 
 @Controller('n8n')
 export class N8nController {
@@ -36,6 +37,7 @@ export class N8nController {
       select: {
         id: true,
         userId: true,
+        promptCategoryId: true,
         name: true,
         prompt: true,
         promptType: true,
@@ -47,7 +49,33 @@ export class N8nController {
     if (!agentPrompt) throw new NotFoundException();
 
     const manualConfig = agentPrompt.manualConfig && typeof agentPrompt.manualConfig === 'object' ? (agentPrompt.manualConfig as any) : null;
-    const variables = manualConfig ? manualConfig.variables ?? null : null;
+    let resolvedPrompt = agentPrompt.prompt;
+    let variables: any = null;
+    let resolvedConfig: any = manualConfig;
+    if (agentPrompt.promptType === 'USER_MANUAL' && manualConfig?.version === 3) {
+      const categoryId = String(manualConfig?.categoryId ?? agentPrompt.promptCategoryId ?? '').trim();
+      if (!categoryId) throw new NotFoundException();
+      const category = await (this.prisma as any).promptCategory.findFirst({
+        where: { id: categoryId, active: true },
+        select: { id: true, name: true, basePrompt: true, adminRules: true, tools: true, requiredVariables: true, variables: true }
+      });
+      if (!category?.id) throw new NotFoundException();
+      const agentName = String(agentPrompt.name ?? '').trim() || 'Agente';
+      const userCfgRaw = manualConfig?.user && typeof manualConfig.user === 'object' ? manualConfig.user : {};
+      const userCfg = normalizeUserConfig(userCfgRaw);
+      resolvedPrompt = renderPromptFromCategory(agentName, category, userCfg);
+      variables = category.variables ?? null;
+      resolvedConfig = { ...manualConfig, category: { id: category.id, name: category.name, adminRules: category.adminRules, tools: category.tools, requiredVariables: category.requiredVariables, variables: category.variables } };
+    } else {
+      variables = (() => {
+        if (!manualConfig) return null;
+        if (manualConfig?.version === 2) {
+          const admin = manualConfig?.admin && typeof manualConfig.admin === 'object' ? manualConfig.admin : null;
+          return admin ? (admin as any).variables ?? null : null;
+        }
+        return manualConfig.variables ?? null;
+      })();
+    }
 
     return {
       agent: {
@@ -57,9 +85,9 @@ export class N8nController {
         version: agentPrompt.version ?? 1,
         updatedAt: agentPrompt.updatedAt
       },
-      prompt: agentPrompt.prompt,
+      prompt: resolvedPrompt,
       variables,
-      config: manualConfig
+      config: resolvedConfig
     };
   }
 }

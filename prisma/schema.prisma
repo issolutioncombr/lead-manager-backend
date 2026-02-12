@@ -96,6 +96,7 @@ model User {
   leadStatuses        LeadStatus[]
   metaAdsIntegrations MetaAdsIntegration[]
   createdAgentPrompts AgentPrompt[] @relation("AgentPromptCreatedBy")
+  createdPromptCategories PromptCategory[] @relation("PromptCategoryCreatedBy")
 
   @@index([companyId])
 }
@@ -378,6 +379,28 @@ model SellerAvailability {
   @@map("seller_availability")
 }
 
+model PromptCategory {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  active          Boolean  @default(true)
+  basePrompt      String   @default("") @map("base_prompt")
+  adminRules      String?  @map("admin_rules")
+  tools           Json?    @map("tools")
+  requiredVariables Json?  @map("required_variables")
+  variables       Json?    @map("variables")
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy       User?       @relation("PromptCategoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  prompts         AgentPrompt[]
+
+  @@unique([name])
+  @@index([createdByUserId])
+  @@map("prompt_categories")
+}
+
 model LegacyAgentPrompt {
   userId String @id
   prompt String?
@@ -390,6 +413,7 @@ model LegacyAgentPrompt {
 model AgentPrompt {
   id        String   @id @default(cuid())
   userId    String
+  promptCategoryId String? @map("prompt_category_id")
   name      String?
   prompt    String
   active    Boolean  @default(true)
@@ -402,6 +426,7 @@ model AgentPrompt {
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdBy User?    @relation("AgentPromptCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  promptCategory PromptCategory? @relation(fields: [promptCategoryId], references: [id], onDelete: SetNull)
   links     EvolutionInstanceAgentPrompt[]
   assignments EvolutionInstancePromptAssignment[]
   dispatchLogs PromptDispatchLog[]
@@ -409,6 +434,7 @@ model AgentPrompt {
   @@index([userId])
   @@index([createdByUserId])
   @@index([userId, promptType])
+  @@index([promptCategoryId])
   @@map("agent_prompt_library")
 }
 

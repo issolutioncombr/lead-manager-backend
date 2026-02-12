@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsObject, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsOptional, IsString, MinLength, ValidateNested } from 'class-validator';
 
 export class ManualPromptFaqDto {
   @IsString()
@@ -11,25 +11,11 @@ export class ManualPromptFaqDto {
   answer!: string;
 }
 
-export class ManualPromptSchedulingDto {
-  @IsOptional()
-  @IsString()
-  timezone?: string;
-
-  @IsOptional()
-  @IsString()
-  windowStart?: string;
-
-  @IsOptional()
-  @IsString()
-  windowEnd?: string;
-
-  @IsOptional()
-  @IsString()
-  minLeadTimeMinutes?: string;
-}
-
 export class CreateManualPromptDto {
+  @IsString()
+  @MinLength(1)
+  categoryId!: string;
+
   @IsString()
   @MinLength(1)
   agentName!: string;
@@ -59,18 +45,13 @@ export class CreateManualPromptDto {
   @ValidateNested({ each: true })
   @Type(() => ManualPromptFaqDto)
   faqs?: ManualPromptFaqDto[];
-
-  @IsOptional()
-  @IsObject()
-  variables?: Record<string, any>;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ManualPromptSchedulingDto)
-  scheduling?: ManualPromptSchedulingDto;
 }
 
 export class UpdateManualPromptDto {
+  @IsOptional()
+  @IsString()
+  categoryId?: string;
+
   @IsOptional()
   @IsString()
   agentName?: string;
@@ -100,13 +81,4 @@ export class UpdateManualPromptDto {
   @ValidateNested({ each: true })
   @Type(() => ManualPromptFaqDto)
   faqs?: ManualPromptFaqDto[];
-
-  @IsOptional()
-  @IsObject()
-  variables?: Record<string, any>;
-
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => ManualPromptSchedulingDto)
-  scheduling?: ManualPromptSchedulingDto;
 }

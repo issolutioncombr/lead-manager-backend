@@ -99,15 +99,20 @@ export class AgentPromptService {
     return rows.map((r: any) => ({ ...r, prompt: null }));
   }
 
-  async createPrompt(userId: string, data: { name?: string | null; prompt: string }) {
+  async createPrompt(userId: string, data: { categoryId: string; name?: string | null; prompt: string }) {
     const prompt = (data.prompt ?? '').trim();
     if (!prompt) throw new BadRequestException('Prompt é obrigatório');
     if (prompt.length > this.maxStoredPromptLength) throw new BadRequestException('Prompt muito grande');
     const name = this.normalizePromptName(data.name);
     await this.assertUniquePromptName(userId, name);
+    const categoryId = String(data.categoryId ?? '').trim();
+    if (!categoryId) throw new BadRequestException('categoryId é obrigatório');
+    const category = await (this.prisma as any).promptCategory.findFirst({ where: { id: categoryId, active: true }, select: { id: true } });
+    if (!category?.id) throw new BadRequestException('Categoria inválida');
     return await (this.prisma as any).agentPrompt.create({
       data: {
         userId,
+        promptCategoryId: category.id,
         name,
         prompt,
         active: true,
@@ -118,7 +123,7 @@ export class AgentPromptService {
     });
   }
 
-  async updatePrompt(userId: string, promptId: string, data: { name?: string | null; prompt?: string | null; active?: boolean }) {
+  async updatePrompt(userId: string, promptId: string, data: { categoryId?: string; name?: string | null; prompt?: string | null; active?: boolean }) {
     const id = (promptId ?? '').trim();
     if (!id) throw new NotFoundException('Prompt não encontrado');
     const existing = await (this.prisma as any).agentPrompt.findFirst({
@@ -127,6 +132,13 @@ export class AgentPromptService {
     });
     if (!existing?.id) throw new NotFoundException('Prompt não encontrado');
     const update: any = {};
+    if (data.categoryId !== undefined) {
+      const categoryId = String(data.categoryId ?? '').trim();
+      if (!categoryId) throw new BadRequestException('categoryId inválido');
+      const category = await (this.prisma as any).promptCategory.findFirst({ where: { id: categoryId, active: true }, select: { id: true } });
+      if (!category?.id) throw new BadRequestException('Categoria inválida');
+      update.promptCategoryId = category.id;
+    }
     if (data.name !== undefined) {
       const nextName = this.normalizePromptName(data.name);
       await this.assertUniquePromptName(userId, nextName, id);

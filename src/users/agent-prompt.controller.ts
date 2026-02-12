@@ -48,7 +48,7 @@ export class AgentPromptController {
   @Post('prompts')
   async createPrompt(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAgentPromptLibraryDto) {
     await assertSuperAdmin(this.prisma, user.userId);
-    const created = await this.agentPromptService.createPrompt(user.userId, { name: dto.name ?? null, prompt: dto.prompt });
+    const created = await this.agentPromptService.createPrompt(user.userId, { categoryId: dto.categoryId, name: dto.name ?? null, prompt: dto.prompt });
     return { data: created };
   }
 
@@ -56,6 +56,7 @@ export class AgentPromptController {
   async updatePrompt(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body() dto: UpdateAgentPromptLibraryDto) {
     await assertSuperAdmin(this.prisma, user.userId);
     const updated = await this.agentPromptService.updatePrompt(user.userId, id, {
+      categoryId: dto.categoryId,
       name: dto.name,
       prompt: dto.prompt,
       active: dto.active

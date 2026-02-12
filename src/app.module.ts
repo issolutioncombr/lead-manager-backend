@@ -28,6 +28,7 @@ import { MetaAdsModule } from './meta-ads/meta-ads.module';
 import { AdminModule } from './admin/admin.module';
 import { ManualPromptsModule } from './manual-prompts/manual-prompts.module';
 import { N8nModule } from './n8n/n8n.module';
+import { PromptCategoriesModule } from './prompt-categories/prompt-categories.module';
 
 @Module({
   imports: [
@@ -57,7 +58,8 @@ import { N8nModule } from './n8n/n8n.module';
     MetaAdsModule,
     AdminModule,
     ManualPromptsModule,
-    N8nModule
+    N8nModule,
+    PromptCategoriesModule
   ],
   providers: [
     {

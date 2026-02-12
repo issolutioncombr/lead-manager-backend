@@ -252,7 +252,7 @@ export class SellerNotesService {
       next.leadId = v ? v : null;
     }
 
-    let finalAppointmentId = next.appointmentId !== undefined ? next.appointmentId : (existing.appointmentId as string | null);
+    const finalAppointmentId = next.appointmentId !== undefined ? next.appointmentId : (existing.appointmentId as string | null);
     let finalLeadId = next.leadId !== undefined ? next.leadId : (existing.leadId as string | null);
 
     if (finalAppointmentId) {

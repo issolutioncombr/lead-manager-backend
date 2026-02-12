@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import https from 'node:https';
 import { MessageEventsService } from './message-events.service';
+import { normalizeUserConfig, renderPromptFromCategory } from '../manual-prompts/manual-prompt-renderer';
 
 @Injectable()
 export class EvolutionWebhookService {
@@ -431,6 +432,38 @@ export class EvolutionWebhookService {
           }
         }
 
+        let resolvedAgentPrompt: string | null = null;
+        let resolvedAgentVariables: any = null;
+        if (selectedLink?.agentPrompt) {
+          const ap = selectedLink.agentPrompt;
+          resolvedAgentPrompt = typeof ap.prompt === 'string' ? ap.prompt : null;
+          const cfg = ap.manualConfig && typeof ap.manualConfig === 'object' ? (ap.manualConfig as any) : null;
+          if (ap.promptType === 'USER_MANUAL' && cfg?.version === 3) {
+            const categoryId = String(cfg?.categoryId ?? ap.promptCategoryId ?? '').trim();
+            if (categoryId) {
+              const category = await (this.prisma as any).promptCategory.findFirst({
+                where: { id: categoryId, active: true },
+                select: { id: true, name: true, basePrompt: true, adminRules: true, tools: true, requiredVariables: true, variables: true }
+              });
+              if (category?.id) {
+                const userCfgRaw = cfg?.user && typeof cfg.user === 'object' ? cfg.user : {};
+                const userCfg = normalizeUserConfig(userCfgRaw);
+                const agentName = String(ap.name ?? '').trim() || 'Agente';
+                resolvedAgentPrompt = renderPromptFromCategory(agentName, category, userCfg);
+                resolvedAgentVariables = category.variables ?? null;
+              }
+            }
+          } else if (cfg?.version === 2) {
+            const admin = cfg?.admin && typeof cfg.admin === 'object' ? cfg.admin : null;
+            resolvedAgentVariables = admin ? (admin as any).variables ?? null : null;
+          } else if (cfg?.variables !== undefined) {
+            resolvedAgentVariables = cfg?.variables ?? null;
+          }
+        } else {
+          resolvedAgentPrompt = typeof legacyPrompt === 'string' ? legacyPrompt : null;
+          resolvedAgentVariables = null;
+        }
+
         const percent = selectedLink ? Number(selectedLink.percentBps ?? 0) / 100 : 100;
         const occurredAt = messageTimestamp ? new Date(messageTimestamp * 1000) : new Date();
         const companyId = userApiKey?.company?.id ?? null;
@@ -449,7 +482,7 @@ export class EvolutionWebhookService {
           to_number: toNumber,
           prompt_id: selectedLink?.agentPromptId ?? null,
           prompt_name: selectedLink?.agentPrompt?.name ?? null,
-          agent_prompt: selectedLink ? normalizePrompt(selectedLink?.agentPrompt?.prompt) : normalizePrompt(legacyPrompt),
+          agent_prompt: normalizePrompt(resolvedAgentPrompt),
           agent: selectedLink?.agentPromptId
             ? {
                 id: selectedLink.agentPromptId,
@@ -458,10 +491,7 @@ export class EvolutionWebhookService {
                 version: selectedLink?.agentPrompt?.version ?? 1
               }
             : null,
-          agent_variables:
-            selectedLink?.agentPrompt?.manualConfig && typeof selectedLink.agentPrompt.manualConfig === 'object'
-              ? (selectedLink.agentPrompt.manualConfig as any)?.variables ?? null
-              : null,
+          agent_variables: resolvedAgentVariables,
           agent_prompt_url: selectedLink?.agentPromptId ? `/n8n/agent-prompts/${selectedLink.agentPromptId}` : null,
           percent,
           assignment: {
