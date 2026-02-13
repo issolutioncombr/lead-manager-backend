@@ -10,13 +10,13 @@ export class AgentPromptService {
 
   private readonly maxStoredPromptLength = 100000;
 
-  private normalizePromptName(name: string | null | undefined): string | null {
+  private normalizePromptName(name: string | null | undefined): string {
     const normalized = (name ?? '').trim();
-    return normalized ? normalized : null;
+    if (!normalized) throw new BadRequestException('Nome é obrigatório');
+    return normalized;
   }
 
-  private async assertUniquePromptName(userId: string, name: string | null, excludeId?: string) {
-    if (!name) return;
+  private async assertUniquePromptName(userId: string, name: string, excludeId?: string) {
     const rows = await (this.prisma as any).agentPrompt.findMany({
       where: { userId, name: { not: null } },
       select: { id: true, name: true }
@@ -99,7 +99,7 @@ export class AgentPromptService {
     return rows.map((r: any) => ({ ...r, prompt: null }));
   }
 
-  async createPrompt(userId: string, data: { categoryId: string; name?: string | null; prompt: string }) {
+  async createPrompt(userId: string, data: { categoryId: string; name: string; prompt: string }) {
     const prompt = (data.prompt ?? '').trim();
     if (!prompt) throw new BadRequestException('Prompt é obrigatório');
     if (prompt.length > this.maxStoredPromptLength) throw new BadRequestException('Prompt muito grande');

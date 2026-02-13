@@ -3,7 +3,7 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import https from 'node:https';
 import { MessageEventsService } from './message-events.service';
-import { normalizeUserConfig, renderPromptFromCategory } from '../manual-prompts/manual-prompt-renderer';
+import { renderN8nFinalPrompt } from '../manual-prompts/manual-prompt-renderer';
 
 @Injectable()
 export class EvolutionWebhookService {
@@ -438,20 +438,24 @@ export class EvolutionWebhookService {
           const ap = selectedLink.agentPrompt;
           resolvedAgentPrompt = typeof ap.prompt === 'string' ? ap.prompt : null;
           const cfg = ap.manualConfig && typeof ap.manualConfig === 'object' ? (ap.manualConfig as any) : null;
-          if (ap.promptType === 'USER_MANUAL' && cfg?.version === 3) {
-            const categoryId = String(cfg?.categoryId ?? ap.promptCategoryId ?? '').trim();
-            if (categoryId) {
-              const category = await (this.prisma as any).promptCategory.findFirst({
-                where: { id: categoryId, active: true },
-                select: { id: true, name: true, basePrompt: true, adminRules: true, tools: true, requiredVariables: true, variables: true }
-              });
-              if (category?.id) {
-                const userCfgRaw = cfg?.user && typeof cfg.user === 'object' ? cfg.user : {};
-                const userCfg = normalizeUserConfig(userCfgRaw);
-                const agentName = String(ap.name ?? '').trim() || 'Agente';
-                resolvedAgentPrompt = renderPromptFromCategory(agentName, category, userCfg);
-                resolvedAgentVariables = category.variables ?? null;
-              }
+          const categoryId = String(cfg?.categoryId ?? ap.promptCategoryId ?? '').trim();
+          if (categoryId) {
+            const category = await (this.prisma as any).promptCategory.findFirst({
+              where: { id: categoryId, active: true },
+              select: { id: true, name: true, basePrompt: true, variables: true }
+            });
+            if (category?.id) {
+              const agentName = String(ap.name ?? '').trim() || 'Agente';
+              resolvedAgentPrompt =
+                ap.promptType === 'USER_MANUAL' && cfg?.version === 3
+                  ? String(ap.prompt ?? '')
+                  : renderN8nFinalPrompt({
+                      categoryName: category.name,
+                      clientName: agentName,
+                      companyCorePrompt: category.basePrompt ?? '',
+                      clientPrompt: String(ap.prompt ?? '')
+                    });
+              resolvedAgentVariables = category.variables ?? null;
             }
           } else if (cfg?.version === 2) {
             const admin = cfg?.admin && typeof cfg.admin === 'object' ? cfg.admin : null;

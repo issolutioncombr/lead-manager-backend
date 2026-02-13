@@ -9,8 +9,8 @@
     "dev": "nest start --watch",
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
-    "lint": "eslint \"{src,apps,libs,prisma,test}/**/*.ts\"",
-    "lint:fix": "eslint \"{src,apps,libs,prisma,test}/**/*.ts\" --fix",
+    "lint": "eslint \"{src,apps,libs,prisma,test}/**/*.ts\" --max-warnings 0",
+    "lint:fix": "eslint \"{src,apps,libs,prisma,test}/**/*.ts\" --fix --max-warnings 0",
     "format": "prettier --write \"{src,apps,libs,prisma,test}/**/*.ts\"",
     "test": "node scripts/jest-run.js",
     "prisma:generate": "prisma generate",
@@ -64,6 +64,6 @@
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
-    "typescript": "^5.4.5"
+    "typescript": "5.4.5"
   }
 }

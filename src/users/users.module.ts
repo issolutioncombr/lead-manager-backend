@@ -11,6 +11,6 @@ import { UsersController } from './users.controller';
   imports: [PrismaModule],
   controllers: [AgentPromptController, UsersController],
   providers: [UsersService, UsersRepository, AgentPromptService],
-  exports: [UsersService]
+  exports: [UsersService, AgentPromptService]
 })
 export class UsersModule {}

@@ -413,8 +413,8 @@ model LegacyAgentPrompt {
 model AgentPrompt {
   id        String   @id @default(cuid())
   userId    String
-  promptCategoryId String? @map("prompt_category_id")
-  name      String?
+  promptCategoryId String @map("prompt_category_id")
+  name      String
   prompt    String
   active    Boolean  @default(true)
   promptType String  @default("USER_RAW") @map("prompt_type")
@@ -426,7 +426,7 @@ model AgentPrompt {
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdBy User?    @relation("AgentPromptCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
-  promptCategory PromptCategory? @relation(fields: [promptCategoryId], references: [id], onDelete: SetNull)
+  promptCategory PromptCategory @relation(fields: [promptCategoryId], references: [id], onDelete: Restrict)
   links     EvolutionInstanceAgentPrompt[]
   assignments EvolutionInstancePromptAssignment[]
   dispatchLogs PromptDispatchLog[]

@@ -4,9 +4,8 @@ export class CreateAgentPromptLibraryDto {
   @IsString()
   categoryId!: string;
 
-  @IsOptional()
   @IsString()
-  name?: string;
+  name!: string;
 
   @IsString()
   prompt!: string;

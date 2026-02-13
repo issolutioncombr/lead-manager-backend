@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { normalizeUserConfig, renderPromptFromCategory } from './manual-prompt-renderer';
+import { buildClientBusinessBlock, normalizeUserConfig, renderN8nFinalPrompt } from './manual-prompt-renderer';
 
 const normalizeText = (value?: string | null) => {
   const trimmed = String(value ?? '').trim();
@@ -66,18 +66,24 @@ export class ManualPromptsService {
     if (!categoryId) throw new BadRequestException('categoryId é obrigatório');
     const category = await (this.prisma as any).promptCategory.findFirst({
       where: { id: categoryId, active: true },
-      select: { id: true, basePrompt: true, adminRules: true, tools: true, requiredVariables: true, variables: true }
+      select: { id: true, name: true, basePrompt: true, tools: true, requiredVariables: true, variables: true }
     });
     if (!category?.id) throw new NotFoundException('Categoria não encontrada');
     const userConfig = normalizeUserConfig(input);
-    const manualConfig = { version: 3, categoryId: category.id, user: userConfig };
-    const prompt = renderPromptFromCategory(agentName, category, userConfig);
+    const manualConfig = { version: 4, categoryId: category.id, user: userConfig };
+    const clientPrompt = buildClientBusinessBlock(agentName, userConfig);
+    const previewPrompt = renderN8nFinalPrompt({
+      categoryName: category.name,
+      clientName: agentName,
+      companyCorePrompt: category.basePrompt ?? '',
+      clientPrompt
+    });
     return (this.prisma as any).agentPrompt.create({
       data: {
         userId,
         promptCategoryId: category.id,
         name: agentName,
-        prompt,
+        prompt: clientPrompt,
         active: input?.active !== undefined ? Boolean(input.active) : true,
         promptType: 'USER_MANUAL',
         createdByUserId: userId,
@@ -103,16 +109,16 @@ export class ManualPromptsService {
     if (!categoryId) throw new BadRequestException('categoryId é obrigatório');
     const category = await (this.prisma as any).promptCategory.findFirst({
       where: { id: categoryId, active: true },
-      select: { id: true, basePrompt: true, adminRules: true, tools: true, requiredVariables: true, variables: true }
+      select: { id: true, name: true, basePrompt: true, tools: true, requiredVariables: true, variables: true }
     });
     if (!category?.id) throw new NotFoundException('Categoria não encontrada');
 
     const mergedUser = normalizeUserConfig({ ...(prevCfg?.user ?? prevCfg ?? {}), ...input });
     const manualConfig =
       prevCfg?.version === 2 && prevCfg?.admin
-        ? { ...prevCfg, user: mergedUser, categoryId: category.id, version: 3 }
-        : { version: 3, categoryId: category.id, user: mergedUser };
-    const prompt = renderPromptFromCategory(nextName, category, mergedUser);
+        ? { ...prevCfg, user: mergedUser, categoryId: category.id, version: 4 }
+        : { version: 4, categoryId: category.id, user: mergedUser };
+    const clientPrompt = buildClientBusinessBlock(nextName, mergedUser);
 
     return (this.prisma as any).agentPrompt.update({
       where: { id: promptId },
@@ -121,7 +127,7 @@ export class ManualPromptsService {
         promptCategoryId: category.id,
         ...(input?.active !== undefined ? { active: Boolean(input.active) } : {}),
         manualConfig,
-        prompt,
+        prompt: clientPrompt,
         version: { increment: 1 }
       },
       select: { id: true, name: true, active: true, promptType: true, version: true, createdAt: true, updatedAt: true }

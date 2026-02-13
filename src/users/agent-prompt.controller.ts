@@ -48,7 +48,7 @@ export class AgentPromptController {
   @Post('prompts')
   async createPrompt(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAgentPromptLibraryDto) {
     await assertSuperAdmin(this.prisma, user.userId);
-    const created = await this.agentPromptService.createPrompt(user.userId, { categoryId: dto.categoryId, name: dto.name ?? null, prompt: dto.prompt });
+    const created = await this.agentPromptService.createPrompt(user.userId, { categoryId: dto.categoryId, name: dto.name, prompt: dto.prompt });
     return { data: created };
   }
 

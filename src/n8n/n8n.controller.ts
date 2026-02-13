@@ -1,7 +1,7 @@
 import { Controller, Get, Headers, NotFoundException, Param, Query } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../common/decorators/public.decorator';
-import { normalizeUserConfig, renderPromptFromCategory } from '../manual-prompts/manual-prompt-renderer';
+import { renderN8nFinalPrompt } from '../manual-prompts/manual-prompt-renderer';
 
 @Controller('n8n')
 export class N8nController {
@@ -52,7 +52,7 @@ export class N8nController {
     let resolvedPrompt = agentPrompt.prompt;
     let variables: any = null;
     let resolvedConfig: any = manualConfig;
-    if (agentPrompt.promptType === 'USER_MANUAL' && manualConfig?.version === 3) {
+    if (agentPrompt.promptCategoryId) {
       const categoryId = String(manualConfig?.categoryId ?? agentPrompt.promptCategoryId ?? '').trim();
       if (!categoryId) throw new NotFoundException();
       const category = await (this.prisma as any).promptCategory.findFirst({
@@ -61,9 +61,16 @@ export class N8nController {
       });
       if (!category?.id) throw new NotFoundException();
       const agentName = String(agentPrompt.name ?? '').trim() || 'Agente';
-      const userCfgRaw = manualConfig?.user && typeof manualConfig.user === 'object' ? manualConfig.user : {};
-      const userCfg = normalizeUserConfig(userCfgRaw);
-      resolvedPrompt = renderPromptFromCategory(agentName, category, userCfg);
+      if (agentPrompt.promptType === 'USER_MANUAL' && manualConfig?.version === 3) {
+        resolvedPrompt = agentPrompt.prompt;
+      } else {
+        resolvedPrompt = renderN8nFinalPrompt({
+          categoryName: category.name,
+          clientName: agentName,
+          companyCorePrompt: category.basePrompt ?? '',
+          clientPrompt: agentPrompt.prompt
+        });
+      }
       variables = category.variables ?? null;
       resolvedConfig = { ...manualConfig, category: { id: category.id, name: category.name, adminRules: category.adminRules, tools: category.tools, requiredVariables: category.requiredVariables, variables: category.variables } };
     } else {
